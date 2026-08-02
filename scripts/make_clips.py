@@ -34,6 +34,11 @@ def ambil_sumber(target: str, kerja: Path) -> tuple[Path, Path | None]:
     kerja.mkdir(parents=True, exist_ok=True)
     print(f"[unduh] {target}")
     jalankan(source.download_cmd(target, kerja))
+    # subtitle boleh gagal (YouTube sering balas 429) — Whisper jadi cadangan
+    try:
+        jalankan(source.subtitle_cmd(target, kerja))
+    except RuntimeError as e:
+        print(f"[unduh] subtitle tidak dapat diambil ({str(e)[:80]}...)")
     video = max(kerja.glob("*.mp4"), key=lambda p: p.stat().st_mtime)
     teks = sorted(kerja.glob(video.stem + "*.vtt")) + sorted(kerja.glob(video.stem + "*.srt"))
     return video, (teks[0] if teks else None)

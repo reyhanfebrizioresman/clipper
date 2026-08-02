@@ -43,7 +43,21 @@ def test_download_cmd_asks_for_subtitle_and_mp4(tmp_path):
     # dipanggil sebagai modul python venv, bukan binary global:
     # di server yt-dlp hanya ada di dalam .venv, tidak di PATH
     assert cmd[:3] == [sys.executable, "-m", "yt_dlp"]
-    assert "--write-auto-subs" in cmd            # hemat: pakai subtitle otomatis kalau ada
-    assert "id" in joined                        # prioritaskan subtitle Indonesia
+    # video saja — subtitle diambil terpisah supaya rate-limit YouTube (429)
+    # tidak menggagalkan unduhan videonya
+    assert "--write-auto-subs" not in cmd
     assert "mp4" in joined
     assert str(tmp_path) in joined
+
+def test_subtitle_cmd_is_separate_and_indonesian_only(tmp_path):
+    import sys
+    cmd = source.subtitle_cmd("https://youtu.be/abc123", tmp_path)
+    joined = " ".join(cmd)
+    assert cmd[:3] == [sys.executable, "-m", "yt_dlp"]
+    assert "--skip-download" in cmd               # jangan unduh ulang videonya
+    assert "--write-auto-subs" in cmd
+    # periksa nilai argumennya, bukan substring di seluruh perintah
+    # (kata "en" kebetulan muncul di path ".venv")
+    langs = cmd[cmd.index("--sub-langs") + 1]
+    assert langs == "id", f"minta {langs} — satu bahasa saja supaya tidak kena 429"
+    assert "--sleep-requests" in cmd              # beri jeda supaya tidak kena 429
