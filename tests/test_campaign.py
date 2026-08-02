@@ -37,9 +37,12 @@ def test_caption_rejects_empty_hook(tmp_path):
         campaign.caption(c, hook="   ")
 
 def test_download_cmd_asks_for_subtitle_and_mp4(tmp_path):
+    import sys
     cmd = source.download_cmd("https://youtu.be/abc123", tmp_path)
     joined = " ".join(cmd)
-    assert cmd[0] == "yt-dlp"
+    # dipanggil sebagai modul python venv, bukan binary global:
+    # di server yt-dlp hanya ada di dalam .venv, tidak di PATH
+    assert cmd[:3] == [sys.executable, "-m", "yt_dlp"]
     assert "--write-auto-subs" in cmd            # hemat: pakai subtitle otomatis kalau ada
     assert "id" in joined                        # prioritaskan subtitle Indonesia
     assert "mp4" in joined

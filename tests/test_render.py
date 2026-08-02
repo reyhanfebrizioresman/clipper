@@ -48,3 +48,42 @@ def test_cut_produces_1080x1920(tmp_path):
                             "-show_streams", str(out)], check=True, capture_output=True)
     v = next(s for s in json.loads(probe.stdout)["streams"] if s["codec_type"] == "video")
     assert (v["width"], v["height"]) == (1080, 1920)
+
+@pytest.mark.integration
+def test_burn_needs_cwd_at_srt_folder(tmp_path):
+    """Kontrak: burn_cmd memakai NAMA file srt, jadi harus dijalankan dari foldernya.
+    Menjalankannya dari cwd lain membuat ffmpeg gagal membuka subtitle."""
+    import subprocess
+    from clipper.transcript import Segment
+    from clipper.select import Window
+
+    src = tmp_path / "in.mp4"
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc=size=640x360:rate=30",
+                    "-t", "3", str(src)], check=True, capture_output=True)
+    w = Window(start=0.0, end=3.0, text="", segments=[Segment(0.0, 3.0, "halo dunia.")])
+    render.write_srt(w, tmp_path / "s.srt")
+
+    out = tmp_path / "out.mp4"
+    subprocess.run(render.burn_cmd(src.resolve(), "s.srt", out.resolve()),
+                   check=True, capture_output=True, cwd=tmp_path)
+    assert out.exists() and out.stat().st_size > 0
+
+    salah = subprocess.run(render.burn_cmd(src.resolve(), "s.srt", (tmp_path / "x.mp4").resolve()),
+                           capture_output=True, cwd=tmp_path.parent)
+    assert salah.returncode != 0, "harusnya gagal kalau dijalankan dari folder lain"
+
+def test_write_srt_splits_long_segment_into_short_cues(tmp_path):
+    """Segmen transkrip bisa panjang; di layar HP itu jadi 4 baris menutupi gambar."""
+    from clipper.transcript import Segment
+    from clipper.select import Window
+    panjang = ("Jadi sebenarnya komisi rebate itu dibayarkan broker ke IB setiap kali "
+               "klien melakukan transaksi, bukan dari hasil trading pribadi mereka.")
+    w = Window(start=0.0, end=10.0, text=panjang,
+               segments=[Segment(0.0, 10.0, panjang)])
+    out = tmp_path / "s.srt"
+    render.write_srt(w, out)
+    cues = [b for b in out.read_text(encoding="utf-8").split("\n\n") if b.strip()]
+    assert len(cues) >= 2, "segmen panjang harus dipecah jadi beberapa cue"
+    baris = [l for b in cues for l in b.splitlines()[2:] if l.strip()]
+    assert all(len(l) <= 46 for l in baris), f"ada baris kepanjangan: {max(map(len, baris))}"
+    assert "00:00:00,000" in cues[0] and "00:00:10,000" in cues[-1]

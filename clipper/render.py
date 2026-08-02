@@ -28,13 +28,32 @@ def _ts(detik: float) -> str:
     d, ms = divmod(ms, 1000)
     return f"{j:02d}:{m:02d}:{d:02d},{ms:03d}"
 
-def write_srt(window, out_path) -> None:
-    # waktu digeser relatif ke awal klip
-    baris = []
-    for n, seg in enumerate(window.segments, 1):
-        baris += [str(n),
-                  f"{_ts(seg.start - window.start)} --> {_ts(seg.end - window.start)}",
-                  seg.text, ""]
+def _potong_teks(teks: str, maks: int) -> list[str]:
+    """Pecah per kata supaya satu cue tak lebih dari 2 baris di layar HP."""
+    bagian, kini = [], ""
+    for kata in teks.split():
+        if kini and len(kini) + len(kata) + 1 > maks:
+            bagian.append(kini)
+            kini = kata
+        else:
+            kini = f"{kini} {kata}".strip()
+    if kini:
+        bagian.append(kini)
+    return bagian or [teks]
+
+def write_srt(window, out_path, maks_karakter: int = 46) -> None:
+    # waktu digeser relatif ke awal klip; segmen panjang dipecah dan durasinya
+    # dibagi proporsional dengan jumlah karakter
+    baris, n = [], 0
+    for seg in window.segments:
+        potongan = _potong_teks(seg.text, maks_karakter)
+        total = sum(len(p) for p in potongan) or 1
+        t = seg.start - window.start
+        for p in potongan:
+            n += 1
+            d = (seg.end - seg.start) * len(p) / total
+            baris += [str(n), f"{_ts(t)} --> {_ts(t + d)}", p, ""]
+            t += d
     Path(out_path).write_text("\n".join(baris), encoding="utf-8")
 
 def burn_cmd(in_mp4, srt_name: str, out_mp4) -> list[str]:
