@@ -1,0 +1,24 @@
+{
+  "slug": "ftm-potrade",
+  "nama": "Podcast FTM Potrade",
+  "sumber_platform": "Clippo",
+  "cpm_rp": 3000,
+  "durasi_min_s": 15,
+  "durasi_maks_s": 180,
+  "platform": ["TikTok", "Instagram"],
+  "hashtag": ["#FTMPodtrade", "#Fxpayout", "#TMGM", "#TradingForex", "#tradingclpo"],
+  "keywords": ["rebate", "broker", "IB", "komisi", "mobil", "flexing", "loss", "MC",
+               "affiliator", "rahasia", "dibodohi", "pinjaman"],
+  "angle": [
+    "IB kaya dari komisi rebate, bukan dari hasil trading sendiri",
+    "mobil sport IB adalah fasilitas pinjaman broker untuk bahan flexing",
+    "sisi gelap industri IB forex"
+  ],
+  "larangan": [
+    "jangan memotong sampai mengubah makna",
+    "jangan hook menyerang orang/brand lain",
+    "jangan judul misleading",
+    "dilarang bot/boosting/engagement palsu",
+    "dilarang reupload video full"
+  ]
+}
