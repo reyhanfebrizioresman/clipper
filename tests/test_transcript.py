@@ -42,3 +42,33 @@ def test_parse_joins_multiline_cue():
            "baris pertama\nbaris kedua\n")
     segs = transcript.parse(vtt)
     assert segs[0].text == "baris pertama baris kedua"
+
+# VTT otomatis YouTube: ada tag waktu inline + baris diulang (rolling caption)
+VTT_AUTO = """WEBVTT
+
+00:00:01.000 --> 00:00:03.000
+halo semua
+
+00:00:03.000 --> 00:00:05.500
+halo semua
+selamat<00:00:03.440><c> datang</c><00:00:04.100><c> semua</c>
+
+00:00:05.500 --> 00:00:08.000
+selamat datang semua
+di<00:00:06.200><c> podcast</c><00:00:06.900><c> ini</c>
+"""
+
+def test_parse_strips_inline_timing_tags():
+    segs = transcript.parse(VTT_AUTO)
+    gabungan = " ".join(s.text for s in segs)
+    assert "<" not in gabungan and ">" not in gabungan
+    assert "00:00:03.440" not in gabungan
+    assert "selamat datang semua" in gabungan
+
+def test_parse_drops_rolling_caption_repeats():
+    segs = transcript.parse(VTT_AUTO)
+    teks = [s.text for s in segs]
+    assert teks.count("halo semua") == 1, f"baris berulang tidak dibuang: {teks}"
+    # tiap kalimat cuma muncul sekali di seluruh transkrip
+    gabungan = " ".join(teks)
+    assert gabungan.count("selamat datang semua") == 1, gabungan

@@ -2,6 +2,7 @@
 import re
 from dataclasses import dataclass
 
+TAG = re.compile(r"<[^>]*>")          # <00:00:03.440>, <c>, </c>
 TIME_LINE = re.compile(
     r"(\d{1,2}):(\d{2}):(\d{2})[.,](\d{1,3})\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})[.,](\d{1,3})"
 )
@@ -21,8 +22,25 @@ def parse(isi: str) -> list[Segment]:
     baris_teks: list[str] = []
 
     def tutup() -> None:
-        if start is not None and baris_teks:
-            segmen.append(Segment(start, end, " ".join(baris_teks).strip()))
+        # VTT otomatis YouTube memakai rolling caption: tiap cue mengulang baris
+        # sebelumnya lalu menambah baris baru. Yang diambil hanya bagian barunya.
+        if start is None or not baris_teks:
+            return
+        teks = " ".join(baris_teks).strip()
+        teks = re.sub(r"\s+", " ", teks)
+        if not teks:
+            return
+        if segmen:
+            sebelum = segmen[-1].text
+            if teks == sebelum:
+                return
+            if teks.startswith(sebelum):
+                teks = teks[len(sebelum):].strip()
+            elif sebelum.endswith(teks):
+                return
+            if not teks:
+                return
+        segmen.append(Segment(start, end, teks))
 
     for baris in isi.splitlines():
         cocok = TIME_LINE.search(baris)
@@ -40,6 +58,6 @@ def parse(isi: str) -> list[Segment]:
                 baris_teks.clear()
             continue
         if start is not None:
-            baris_teks.append(bersih)
+            baris_teks.append(TAG.sub("", bersih).strip())
     tutup()
     return segmen
