@@ -96,7 +96,7 @@ def main() -> None:
                  cwd=klip_dir)
         mentah.unlink(missing_ok=True)
 
-        hook = w.segments[0].text.strip()
+        hook = select.hook(w)
         (klip_dir / f"{nama}.txt").write_text(camp.caption(c, hook), encoding="utf-8")
         catatan.append({"file": final.name, "mulai": round(w.start, 1),
                         "durasi": round(w.end - w.start, 1), "hook": hook[:80]})

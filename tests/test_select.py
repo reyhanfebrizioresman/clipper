@@ -39,3 +39,29 @@ def test_rank_puts_keyword_hits_first():
     jendela = select.build_windows(segs, min_s=15, max_s=25)
     peringkat = select.rank(jendela, keywords=["rebate", "broker"])
     assert "rebate" in peringkat[0].text
+
+def test_windows_start_at_sentence_beginning():
+    """Subtitle otomatis dipotong per beberapa kata; kalau jendela mulai di
+    sembarang segmen, klip dibuka dengan penggalan seperti 'gini' atau 'Iya.'"""
+    segs = [Segment(0, 5, "ini kalimat pertama."),
+            Segment(5, 10, "lalu"),
+            Segment(10, 15, "sambungannya begini."),
+            Segment(15, 20, "kalimat baru dimulai di sini."),
+            Segment(20, 25, "dan"),
+            Segment(25, 30, "terus berlanjut."),
+            Segment(30, 35, "penutupnya."),
+            Segment(35, 40, "kalimat terakhir ya.")]
+    for w in select.build_windows(segs, min_s=15, max_s=25):
+        awal = w.segments[0]
+        idx = segs.index(awal)
+        assert idx == 0 or segs[idx - 1].text.rstrip().endswith((".", "!", "?")), \
+            f"klip dibuka di tengah kalimat: '{awal.text}'"
+
+def test_hook_takes_first_full_sentence():
+    w = select.Window(start=0, end=30, text="gini. Jadi rebate itu dibayar broker ke IB tiap transaksi. Nah.",
+                      segments=[])
+    assert select.hook(w) == "Jadi rebate itu dibayar broker ke IB tiap transaksi."
+
+def test_hook_falls_back_to_start_when_no_long_sentence():
+    w = select.Window(start=0, end=30, text="ya. oke. betul.", segments=[])
+    assert select.hook(w)

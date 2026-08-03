@@ -3,9 +3,12 @@
 Potongan selalu dimulai dan diakhiri di batas segmen supaya tidak memutus
 kalimat di tengah — aturan campaign melarang potongan yang mengubah makna.
 """
+import re
 from dataclasses import dataclass
 
 from clipper.transcript import Segment
+
+AKHIR_KALIMAT = (".", "!", "?", "…")
 
 @dataclass
 class Window:
@@ -14,10 +17,18 @@ class Window:
     text: str
     segments: list
 
+def _mulai_kalimat(segments: list[Segment], i: int) -> bool:
+    # subtitle otomatis dipecah per beberapa kata, jadi "batas segmen" saja tidak
+    # cukup — klip bisa dibuka dengan penggalan seperti "gini" atau "Iya."
+    return i == 0 or segments[i - 1].text.rstrip().endswith(AKHIR_KALIMAT)
+
 def build_windows(segments: list[Segment], min_s: float, max_s: float) -> list[Window]:
     jendela: list[Window] = []
     i = 0
     while i < len(segments):
+        if not _mulai_kalimat(segments, i):
+            i += 1
+            continue
         j = i
         while j < len(segments) and segments[j].end - segments[i].start <= max_s:
             j += 1
@@ -40,3 +51,12 @@ def rank(windows: list[Window], keywords: list[str]) -> list[Window]:
         return (-sum(teks.count(k) for k in kunci), w.start)
 
     return sorted(windows, key=skor)
+
+def hook(window: Window, min_kata: int = 5) -> str:
+    """Kalimat pembuka untuk caption — cari kalimat utuh pertama yang cukup
+    berisi, bukan penggalan seperti "gini" atau "Iya."."""
+    kalimat = [k.strip() for k in re.split(r"(?<=[.!?…])\s+", window.text) if k.strip()]
+    for k in kalimat:
+        if len(k.split()) >= min_kata:
+            return k
+    return window.text.strip()[:120] or "(tanpa teks)"
