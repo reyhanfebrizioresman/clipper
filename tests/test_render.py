@@ -33,7 +33,8 @@ def test_burn_cmd_subtitle_sized_for_phone(tmp_path):
     size_px = int(joined.split("FontSize=")[1].split(",")[0]) * skala
     margin_px = int(joined.split("MarginV=")[1].split(",")[0]) * skala
     assert 60 <= size_px <= 120
-    assert 250 <= margin_px <= 500                      # aman dari UI TikTok yang lebih tinggi
+    # menempel di bawah video, tapi ~30% layar bawah tetap bebas untuk UI TikTok
+    assert 400 <= margin_px <= 800
 
 @pytest.mark.integration
 def test_cut_produces_1080x1920(tmp_path):
