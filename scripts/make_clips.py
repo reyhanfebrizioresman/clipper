@@ -60,6 +60,8 @@ def main() -> None:
     ap.add_argument("brief", help="file JSON brief campaign")
     ap.add_argument("sumber", help="URL video atau path file lokal")
     ap.add_argument("--jumlah", type=int, default=5)
+    ap.add_argument("--lewati", type=int, default=0,
+                    help="lewati N kandidat teratas (untuk membuat batch lanjutan)")
     ap.add_argument("--maks-durasi", type=float, default=60,
                     help="klip pendek lebih disukai algoritma TikTok/Reels (default 60 dtk)")
     ap.add_argument("--keluaran", default="work")
@@ -78,11 +80,13 @@ def main() -> None:
 
     batas_atas = min(c.durasi_maks_s, args.maks_durasi)
     jendela = select.build_windows(segmen, c.durasi_min_s, batas_atas)
-    terbaik = select.rank(jendela, c.keywords)[: args.jumlah]
-    print(f"[pilih] {len(jendela)} kandidat -> ambil {len(terbaik)} teratas")
+    peringkat = select.rank(jendela, c.keywords)
+    terbaik = peringkat[args.lewati : args.lewati + args.jumlah]
+    print(f"[pilih] {len(jendela)} kandidat -> ambil {len(terbaik)} "
+          f"(peringkat {args.lewati + 1}-{args.lewati + len(terbaik)})")
 
     catatan = []
-    for n, w in enumerate(terbaik, 1):
+    for n, w in enumerate(terbaik, args.lewati + 1):
         nama = f"{c.slug}-{n:02d}"
         mentah = klip_dir / f"{nama}-raw.mp4"
         srt = klip_dir / f"{nama}.srt"
