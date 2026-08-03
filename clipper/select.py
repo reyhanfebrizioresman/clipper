@@ -6,7 +6,7 @@ kalimat di tengah — aturan campaign melarang potongan yang mengubah makna.
 import re
 from dataclasses import dataclass
 
-from clipper.transcript import Segment, buang_filler
+from clipper.transcript import Segment, buang_filler, koreksi_istilah
 
 AKHIR_KALIMAT = (".", "!", "?", "…")
 
@@ -52,11 +52,11 @@ def rank(windows: list[Window], keywords: list[str]) -> list[Window]:
 
     return sorted(windows, key=skor)
 
-def hook(window: Window, min_kata: int = 5) -> str:
+def hook(window: Window, min_kata: int = 5, koreksi: dict | None = None) -> str:
     """Kalimat pembuka untuk caption — cari kalimat utuh pertama yang cukup
     berisi, bukan penggalan seperti "gini" atau "Iya."."""
     def rapikan(s: str) -> str:
-        s = buang_filler(s)
+        s = koreksi_istilah(buang_filler(s), koreksi)
         return s[:1].upper() + s[1:] if s else s
 
     kalimat = [k.strip() for k in re.split(r"(?<=[.!?…])\s+", window.text) if k.strip()]

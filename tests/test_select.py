@@ -74,3 +74,12 @@ def test_hook_removes_speech_fillers():
     h = select.hook(w)
     assert " ee " not in h and not h.startswith("ee ")
     assert "sebetulnya" in h and "perantara broker" in h
+
+def test_hook_applies_term_corrections():
+    """Kamus koreksi harus berlaku di caption juga, bukan cuma subtitle —
+    kalau tidak, caption menulis 'IBIB' sementara subtitle menulis 'IB-IB'."""
+    w = select.Window(start=0, end=30, segments=[],
+                      text="IBIB di Indonesia ini mereka dapat rebit dari broker.")
+    h = select.hook(w, koreksi={"IBIB": "IB-IB", "rebit": "rebate"})
+    assert "IB-IB" in h and "IBIB" not in h
+    assert "rebate" in h
