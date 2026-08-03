@@ -2,7 +2,8 @@
 import os
 from pathlib import Path
 
-from clipper.transcript import buang_filler, koreksi_istilah, rapikan_kapital
+from clipper.transcript import (akhir_kalimat, buang_filler,
+                                koreksi_istilah, rapikan_kapital)
 
 FFMPEG = os.getenv("FFMPEG_BIN", "ffmpeg")
 W, H = 1080, 1920
@@ -47,8 +48,11 @@ def write_srt(window, out_path, maks_karakter: int = 46, koreksi: dict | None = 
     # waktu digeser relatif ke awal klip; segmen panjang dipecah dan durasinya
     # dibagi proporsional dengan jumlah karakter
     baris, n = [], 0
+    mulai_kalimat = True          # potongan pertama klip selalu dianggap awal
     for seg in window.segments:
-        teks = rapikan_kapital(koreksi_istilah(buang_filler(seg.text), koreksi))
+        teks = koreksi_istilah(buang_filler(seg.text), koreksi)
+        teks = rapikan_kapital(teks, awal_kalimat=mulai_kalimat)
+        mulai_kalimat = akhir_kalimat(teks)
         potongan = _potong_teks(teks, maks_karakter)
         total = sum(len(p) for p in potongan) or 1
         t = seg.start - window.start
@@ -63,8 +67,10 @@ def burn_cmd(in_mp4, srt_name: str, out_mp4) -> list[str]:
     # libass menskalakan angka style ke tinggi referensi 288 (faktor 1920/288 ~ 6,7):
     # FontSize=13 ~ 87 px, MarginV=55 ~ 367 px dari bawah — TikTok menaruh UI lebih
     # tinggi dari YouTube Shorts, jadi marginnya sengaja lebih besar.
-    style = ("FontSize=13,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,"
-             "Outline=2,MarginV=55,Alignment=2")
+    # Lato Black: sans-serif tebal, jauh lebih terbaca di layar HP daripada
+    # font bawaan libass. Shadow tipis menambah kontras di latar terang.
+    style = ("FontName=Lato Black,Bold=1,FontSize=13,PrimaryColour=&HFFFFFF&,"
+             "OutlineColour=&H000000&,Outline=2,Shadow=1,MarginV=55,Alignment=2")
     return [FFMPEG, "-y", "-i", str(in_mp4),
             "-vf", f"subtitles={srt_name}:force_style='{style}'",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",

@@ -19,13 +19,21 @@ def koreksi_istilah(teks: str, kamus: dict | None) -> str:
         teks = re.sub(rf"\b{re.escape(salah)}\b", benar, teks, flags=re.IGNORECASE)
     return teks
 
-def rapikan_kapital(teks: str) -> str:
-    """Besarkan huruf awal kalimat — transkrip otomatis menulis semuanya kecil."""
+def rapikan_kapital(teks: str, awal_kalimat: bool = True) -> str:
+    """Besarkan huruf awal kalimat — transkrip otomatis menulis semuanya kecil.
+
+    awal_kalimat=False dipakai saat potongan ini sambungan dari potongan
+    sebelumnya; mengapitalkannya akan memutus kalimat secara visual.
+    """
     teks = teks.strip()
     if not teks:
         return teks
-    hasil = teks[0].upper() + teks[1:]
-    return re.sub(r"([.!?…]\s+)([a-z])", lambda m: m.group(1) + m.group(2).upper(), hasil)
+    if awal_kalimat:
+        teks = teks[0].upper() + teks[1:]
+    return re.sub(r"([.!?…]\s+)([a-z])", lambda m: m.group(1) + m.group(2).upper(), teks)
+
+def akhir_kalimat(teks: str) -> bool:
+    return teks.rstrip().endswith((".", "!", "?", "…"))
 TIME_LINE = re.compile(
     r"(\d{1,2}):(\d{2}):(\d{2})[.,](\d{1,3})\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})[.,](\d{1,3})"
 )
