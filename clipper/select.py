@@ -6,11 +6,9 @@ kalimat di tengah — aturan campaign melarang potongan yang mengubah makna.
 import re
 from dataclasses import dataclass
 
-from clipper.transcript import Segment
+from clipper.transcript import Segment, buang_filler
 
 AKHIR_KALIMAT = (".", "!", "?", "…")
-# kata pengisi khas transkrip otomatis — dibuang dari caption saja, tidak dari subtitle
-FILLER = re.compile(r"\b(ee+|eh+|emm+|hmm+|anu)\b[,]?\s*", re.IGNORECASE)
 
 @dataclass
 class Window:
@@ -58,8 +56,7 @@ def hook(window: Window, min_kata: int = 5) -> str:
     """Kalimat pembuka untuk caption — cari kalimat utuh pertama yang cukup
     berisi, bukan penggalan seperti "gini" atau "Iya."."""
     def rapikan(s: str) -> str:
-        s = FILLER.sub("", s)
-        s = re.sub(r"\s+", " ", s).strip(" ,")
+        s = buang_filler(s)
         return s[:1].upper() + s[1:] if s else s
 
     kalimat = [k.strip() for k in re.split(r"(?<=[.!?…])\s+", window.text) if k.strip()]

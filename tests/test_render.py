@@ -87,3 +87,16 @@ def test_write_srt_splits_long_segment_into_short_cues(tmp_path):
     baris = [l for b in cues for l in b.splitlines()[2:] if l.strip()]
     assert all(len(l) <= 46 for l in baris), f"ada baris kepanjangan: {max(map(len, baris))}"
     assert "00:00:00,000" in cues[0] and "00:00:10,000" in cues[-1]
+
+def test_write_srt_removes_speech_fillers(tmp_path):
+    """Filler 'ee'/'eh' bikin subtitle sulit dibaca di layar HP. Membuangnya
+    tidak mengubah makna, jadi tetap patuh aturan campaign."""
+    from clipper.transcript import Segment
+    from clipper.select import Window
+    w = Window(start=0.0, end=8.0, text="",
+               segments=[Segment(0.0, 8.0, "tapi gimana caranya ee cari posisi untuk jackpot")])
+    out = tmp_path / "s.srt"
+    render.write_srt(w, out)
+    isi = out.read_text(encoding="utf-8")
+    assert " ee " not in isi and " eh " not in isi
+    assert "cari posisi untuk jackpot" in isi

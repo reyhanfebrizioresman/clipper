@@ -2,6 +2,8 @@
 import os
 from pathlib import Path
 
+from clipper.transcript import buang_filler
+
 FFMPEG = os.getenv("FFMPEG_BIN", "ffmpeg")
 W, H = 1080, 1920
 
@@ -46,7 +48,7 @@ def write_srt(window, out_path, maks_karakter: int = 46) -> None:
     # dibagi proporsional dengan jumlah karakter
     baris, n = [], 0
     for seg in window.segments:
-        potongan = _potong_teks(seg.text, maks_karakter)
+        potongan = _potong_teks(buang_filler(seg.text), maks_karakter)
         total = sum(len(p) for p in potongan) or 1
         t = seg.start - window.start
         for p in potongan:

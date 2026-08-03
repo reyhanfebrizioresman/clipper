@@ -3,6 +3,12 @@ import re
 from dataclasses import dataclass
 
 TAG = re.compile(r"<[^>]*>")          # <00:00:03.440>, <c>, </c>
+# kata pengisi khas transkrip otomatis; membuangnya tidak mengubah makna
+FILLER = re.compile(r"\b(ee+|eh+|emm+|hmm+|anu)\b[,]?\s*", re.IGNORECASE)
+
+def buang_filler(teks: str) -> str:
+    bersih = re.sub(r"\s+", " ", FILLER.sub("", teks)).strip(" ,")
+    return bersih or teks.strip()
 TIME_LINE = re.compile(
     r"(\d{1,2}):(\d{2}):(\d{2})[.,](\d{1,3})\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})[.,](\d{1,3})"
 )
