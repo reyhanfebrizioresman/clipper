@@ -31,36 +31,54 @@ def _ts(detik: float) -> str:
     d, ms = divmod(ms, 1000)
     return f"{j:02d}:{m:02d}:{d:02d},{ms:03d}"
 
-def _potong_teks(teks: str, maks: int) -> list[str]:
-    """Pecah per kata supaya satu cue tak lebih dari 2 baris di layar HP."""
-    bagian, kini = [], ""
-    for kata in teks.split():
-        if kini and len(kini) + len(kata) + 1 > maks:
-            bagian.append(kini)
-            kini = kata
-        else:
-            kini = f"{kini} {kata}".strip()
-    if kini:
-        bagian.append(kini)
-    return bagian or [teks]
-
-def write_srt(window, out_path, maks_karakter: int = 46, koreksi: dict | None = None) -> None:
-    # waktu digeser relatif ke awal klip; segmen panjang dipecah dan durasinya
-    # dibagi proporsional dengan jumlah karakter
-    baris, n = [], 0
-    mulai_kalimat = True          # potongan pertama klip selalu dianggap awal
+def _kata_berwaktu(window, koreksi):
+    """Ratakan seluruh segmen jadi daftar (kata, waktu). Potongan mentah VTT
+    otomatis sering terbelah aneh; menyusun ulang dari kata membuat tiap baris
+    subtitle utuh."""
+    hasil = []
     for seg in window.segments:
         teks = koreksi_istilah(buang_filler(seg.text), koreksi)
+        teks = teks.lstrip(" .,")
+        kata = teks.split()
+        if not kata:
+            continue
+        durasi = max(seg.end - seg.start, 0.001)
+        for i, k in enumerate(kata):
+            mulai = seg.start + durasi * i / len(kata)
+            selesai = seg.start + durasi * (i + 1) / len(kata)
+            hasil.append((k, mulai, selesai))
+    return hasil
+
+def _kelompokkan(kata_berwaktu, maks_karakter):
+    """Kumpulkan kata jadi cue: berhenti saat kalimat selesai atau baris penuh."""
+    cue, kini = [], []
+    for k, mulai, selesai in kata_berwaktu:
+        panjang = len(" ".join([w for w, _, _ in kini] + [k]))
+        if kini and panjang > maks_karakter:
+            cue.append(kini)
+            kini = []
+        kini.append((k, mulai, selesai))
+        if akhir_kalimat(k):
+            cue.append(kini)
+            kini = []
+    if kini:
+        cue.append(kini)
+    return cue
+
+def write_srt(window, out_path, maks_karakter: int = 46, koreksi: dict | None = None) -> None:
+    kata = _kata_berwaktu(window, koreksi)
+    baris, n = [], 0
+    mulai_kalimat = True
+    for kelompok in _kelompokkan(kata, maks_karakter):
+        if not kelompok:
+            continue
+        teks = " ".join(w for w, _, _ in kelompok)
         teks = rapikan_kapital(teks, awal_kalimat=mulai_kalimat)
         mulai_kalimat = akhir_kalimat(teks)
-        potongan = _potong_teks(teks, maks_karakter)
-        total = sum(len(p) for p in potongan) or 1
-        t = seg.start - window.start
-        for p in potongan:
-            n += 1
-            d = (seg.end - seg.start) * len(p) / total
-            baris += [str(n), f"{_ts(t)} --> {_ts(t + d)}", p, ""]
-            t += d
+        n += 1
+        mulai = kelompok[0][1] - window.start
+        selesai = kelompok[-1][2] - window.start
+        baris += [str(n), f"{_ts(mulai)} --> {_ts(selesai)}", teks, ""]
     Path(out_path).write_text("\n".join(baris), encoding="utf-8")
 
 def burn_cmd(in_mp4, srt_name: str, out_mp4) -> list[str]:

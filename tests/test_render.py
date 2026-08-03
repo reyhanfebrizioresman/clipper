@@ -145,3 +145,34 @@ def test_burn_cmd_uses_bold_font(tmp_path):
     cmd = render.burn_cmd(tmp_path / "in.mp4", "s.srt", tmp_path / "out.mp4")
     joined = " ".join(cmd)
     assert "FontName=" in joined and "Bold=1" in joined
+
+def test_srt_cues_rebuilt_from_words_not_raw_segments(tmp_path):
+    """Potongan VTT otomatis berantakan (mis. '. Lebih ... D'). Cue harus disusun
+    ulang dari kata supaya tiap baris utuh dan tidak diawali tanda baca."""
+    from clipper.transcript import Segment
+    from clipper.select import Window
+    w = Window(start=0.0, end=12.0, text="", segments=[
+        Segment(0.0, 4.0, "lebih ke hoki-hokian"),
+        Segment(4.0, 8.0, ". cap"),
+        Segment(8.0, 12.0, "cip cup gitu pak."),
+    ])
+    out = tmp_path / "s.srt"
+    render.write_srt(w, out)
+    cues = [b for b in out.read_text(encoding="utf-8").split("\n\n") if b.strip()]
+    teks = [b.splitlines()[2] for b in cues]
+    assert all(not t.startswith((".", ",")) for t in teks), teks
+    assert all(len(t.split()) >= 2 or t.endswith((".", "!", "?")) for t in teks), teks
+    assert "cap cip cup" in " ".join(teks)      # kata tidak tercerai antar cue
+
+def test_srt_timing_stays_within_window(tmp_path):
+    from clipper.transcript import Segment
+    from clipper.select import Window
+    w = Window(start=10.0, end=25.0, text="", segments=[
+        Segment(10.0, 17.0, "satu dua tiga empat lima enam tujuh delapan."),
+        Segment(17.0, 25.0, "sembilan sepuluh sebelas dua belas tiga belas."),
+    ])
+    out = tmp_path / "s.srt"
+    render.write_srt(w, out)
+    isi = out.read_text(encoding="utf-8")
+    assert isi.startswith("1\n00:00:00,000")
+    assert "00:00:15,000" in isi                 # berakhir di durasi window (25-10)
