@@ -5,10 +5,31 @@
   "cpm_rp": 3000,
   "durasi_min_s": 15,
   "durasi_maks_s": 180,
-  "platform": ["TikTok", "Instagram"],
-  "hashtag": ["#FTMPodtrade", "#Fxpayout", "#TMGM", "#TradingForex", "#tradingclpo"],
-  "keywords": ["rebate", "broker", "IB", "komisi", "mobil", "flexing", "loss", "MC",
-               "affiliator", "rahasia", "dibodohi", "pinjaman"],
+  "platform": [
+    "TikTok",
+    "Instagram"
+  ],
+  "hashtag": [
+    "#FTMPodtrade",
+    "#Fxpayout",
+    "#TMGM",
+    "#TradingForex",
+    "#tradingclpo"
+  ],
+  "keywords": [
+    "rebate",
+    "broker",
+    "IB",
+    "komisi",
+    "mobil",
+    "flexing",
+    "loss",
+    "MC",
+    "affiliator",
+    "rahasia",
+    "dibodohi",
+    "pinjaman"
+  ],
   "angle": [
     "IB kaya dari komisi rebate, bukan dari hasil trading sendiri",
     "mobil sport IB adalah fasilitas pinjaman broker untuk bahan flexing",
@@ -20,5 +41,23 @@
     "jangan judul misleading",
     "dilarang bot/boosting/engagement palsu",
     "dilarang reupload video full"
-  ]
+  ],
+  "koreksi": {
+    "rebit": "rebate",
+    "rebet": "rebate",
+    "ribet ya": "rebate ya",
+    "IBMB": "IB",
+    "IBIB": "IB-IB",
+    "ib": "IB",
+    "broker ya": "broker ya",
+    "forek": "forex",
+    "poreks": "forex",
+    "margin cal": "margin call",
+    "leverage nya": "leverage-nya",
+    "trader ya": "trader ya",
+    "spret": "spread",
+    "sepret": "spread",
+    "loot": "lot",
+    "pip nya": "pip-nya"
+  }
 }

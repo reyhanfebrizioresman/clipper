@@ -9,6 +9,23 @@ FILLER = re.compile(r"\b(ee+|eh+|emm+|hmm+|anu)\b[,]?\s*", re.IGNORECASE)
 def buang_filler(teks: str) -> str:
     bersih = re.sub(r"\s+", " ", FILLER.sub("", teks)).strip(" ,")
     return bersih or teks.strip()
+
+def koreksi_istilah(teks: str, kamus: dict | None) -> str:
+    """Transkrip otomatis sering salah dengar istilah teknis ('rebit' untuk
+    'rebate'). Kamus koreksi datang dari brief campaign."""
+    if not kamus:
+        return teks
+    for salah, benar in kamus.items():
+        teks = re.sub(rf"\b{re.escape(salah)}\b", benar, teks, flags=re.IGNORECASE)
+    return teks
+
+def rapikan_kapital(teks: str) -> str:
+    """Besarkan huruf awal kalimat — transkrip otomatis menulis semuanya kecil."""
+    teks = teks.strip()
+    if not teks:
+        return teks
+    hasil = teks[0].upper() + teks[1:]
+    return re.sub(r"([.!?…]\s+)([a-z])", lambda m: m.group(1) + m.group(2).upper(), hasil)
 TIME_LINE = re.compile(
     r"(\d{1,2}):(\d{2}):(\d{2})[.,](\d{1,3})\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})[.,](\d{1,3})"
 )

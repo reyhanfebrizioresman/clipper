@@ -2,7 +2,7 @@
 import os
 from pathlib import Path
 
-from clipper.transcript import buang_filler
+from clipper.transcript import buang_filler, koreksi_istilah, rapikan_kapital
 
 FFMPEG = os.getenv("FFMPEG_BIN", "ffmpeg")
 W, H = 1080, 1920
@@ -43,12 +43,13 @@ def _potong_teks(teks: str, maks: int) -> list[str]:
         bagian.append(kini)
     return bagian or [teks]
 
-def write_srt(window, out_path, maks_karakter: int = 46) -> None:
+def write_srt(window, out_path, maks_karakter: int = 46, koreksi: dict | None = None) -> None:
     # waktu digeser relatif ke awal klip; segmen panjang dipecah dan durasinya
     # dibagi proporsional dengan jumlah karakter
     baris, n = [], 0
     for seg in window.segments:
-        potongan = _potong_teks(buang_filler(seg.text), maks_karakter)
+        teks = rapikan_kapital(koreksi_istilah(buang_filler(seg.text), koreksi))
+        potongan = _potong_teks(teks, maks_karakter)
         total = sum(len(p) for p in potongan) or 1
         t = seg.start - window.start
         for p in potongan:

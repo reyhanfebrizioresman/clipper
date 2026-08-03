@@ -89,7 +89,7 @@ def main() -> None:
         final = klip_dir / f"{nama}.mp4"
         print(f"[render] {nama} ({w.end - w.start:.0f} dtk) ...")
         jalankan(render.cut_cmd(video, w.start, w.end, mentah))
-        render.write_srt(w, srt)
+        render.write_srt(w, srt, koreksi=c.koreksi)
         # dijalankan dari folder klip: filter subtitles ffmpeg memakai nama file
         # relatif (path absolut butuh escaping yang rapuh)
         jalankan(render.burn_cmd(mentah.resolve(), srt.name, final.resolve()),

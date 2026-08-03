@@ -24,7 +24,7 @@ def test_srt_from_window_starts_at_zero(tmp_path):
     # waktu digeser relatif ke awal klip, bukan waktu asli di video sumber
     assert "00:00:00,000 --> 00:00:05,000" in isi
     assert "00:01:40" not in isi
-    assert "kalimat pertama." in isi
+    assert "Kalimat pertama." in isi   # awal kalimat dibesarkan
 
 def test_burn_cmd_subtitle_sized_for_phone(tmp_path):
     cmd = render.burn_cmd(tmp_path / "in.mp4", "w.srt", tmp_path / "out.mp4")
@@ -100,3 +100,26 @@ def test_write_srt_removes_speech_fillers(tmp_path):
     isi = out.read_text(encoding="utf-8")
     assert " ee " not in isi and " eh " not in isi
     assert "cari posisi untuk jackpot" in isi
+
+def test_write_srt_capitalizes_after_sentence_end(tmp_path):
+    from clipper.transcript import Segment
+    from clipper.select import Window
+    w = Window(start=0.0, end=8.0, text="", segments=[
+        Segment(0.0, 8.0, "betul. pertama rebate terus kedua komisi.")])
+    out = tmp_path / "s.srt"
+    render.write_srt(w, out)
+    isi = out.read_text(encoding="utf-8")
+    assert "Betul." in isi
+    assert "betul." not in isi
+
+def test_write_srt_applies_term_corrections(tmp_path):
+    """Transkrip otomatis salah dengar istilah teknis: 'rebit' untuk 'rebate'."""
+    from clipper.transcript import Segment
+    from clipper.select import Window
+    w = Window(start=0.0, end=8.0, text="", segments=[
+        Segment(0.0, 8.0, "pertama rebit terus kedua IBMB itu")])
+    out = tmp_path / "s.srt"
+    render.write_srt(w, out, koreksi={"rebit": "rebate", "IBMB": "IB"})
+    isi = out.read_text(encoding="utf-8")
+    assert "rebate" in isi and "rebit" not in isi
+    assert "IB " in isi and "IBMB" not in isi

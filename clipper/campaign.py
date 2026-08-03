@@ -14,6 +14,7 @@ class Campaign:
     hashtag: list
     keywords: list = field(default_factory=list)
     larangan: list = field(default_factory=list)
+    koreksi: dict = field(default_factory=dict)   # perbaikan salah dengar transkrip
 
 def load(path) -> Campaign:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
