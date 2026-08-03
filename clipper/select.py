@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from clipper.transcript import Segment
 
 AKHIR_KALIMAT = (".", "!", "?", "…")
+# kata pengisi khas transkrip otomatis — dibuang dari caption saja, tidak dari subtitle
+FILLER = re.compile(r"\b(ee+|eh+|emm+|hmm+|anu)\b[,]?\s*", re.IGNORECASE)
 
 @dataclass
 class Window:
@@ -55,8 +57,14 @@ def rank(windows: list[Window], keywords: list[str]) -> list[Window]:
 def hook(window: Window, min_kata: int = 5) -> str:
     """Kalimat pembuka untuk caption — cari kalimat utuh pertama yang cukup
     berisi, bukan penggalan seperti "gini" atau "Iya."."""
+    def rapikan(s: str) -> str:
+        s = FILLER.sub("", s)
+        s = re.sub(r"\s+", " ", s).strip(" ,")
+        return s[:1].upper() + s[1:] if s else s
+
     kalimat = [k.strip() for k in re.split(r"(?<=[.!?…])\s+", window.text) if k.strip()]
     for k in kalimat:
-        if len(k.split()) >= min_kata:
-            return k
-    return window.text.strip()[:120] or "(tanpa teks)"
+        bersih = rapikan(k)
+        if len(bersih.split()) >= min_kata:
+            return bersih
+    return rapikan(window.text)[:120] or "(tanpa teks)"

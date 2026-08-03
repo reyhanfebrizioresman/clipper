@@ -65,3 +65,12 @@ def test_hook_takes_first_full_sentence():
 def test_hook_falls_back_to_start_when_no_long_sentence():
     w = select.Window(start=0, end=30, text="ya. oke. betul.", segments=[])
     assert select.hook(w)
+
+def test_hook_removes_speech_fillers():
+    """Transkrip otomatis penuh 'ee'/'eh'; di caption itu terlihat tidak rapi.
+    (Subtitle klip tetap apa adanya — aturan campaign melarang mengubah makna.)"""
+    w = select.Window(start=0, end=30, segments=[],
+                      text="Nah, ee sebetulnya ee IB ini ee mereka cuma jadi perantara broker.")
+    h = select.hook(w)
+    assert " ee " not in h and not h.startswith("ee ")
+    assert "sebetulnya" in h and "perantara broker" in h
