@@ -176,3 +176,19 @@ def test_srt_timing_stays_within_window(tmp_path):
     isi = out.read_text(encoding="utf-8")
     assert isi.startswith("1\n00:00:00,000")
     assert "00:00:15,000" in isi                 # berakhir di durasi window (25-10)
+
+def test_video_sits_in_upper_area_not_center(tmp_path):
+    """Kalau video ditaruh persis di tengah, subtitle mengambang jauh di bawahnya
+    dan masuk zona UI TikTok. Video dinaikkan supaya subtitle menempel di bawahnya."""
+    cmd = render.cut_cmd(tmp_path / "s.mp4", start=0, end=10, out_mp4=tmp_path / "o.mp4")
+    joined = " ".join(cmd)
+    assert "(H-h)/2" not in joined, "video masih dipusatkan vertikal"
+    assert "overlay=" in joined
+
+def test_subtitle_margin_clears_tiktok_ui_but_stays_near_video(tmp_path):
+    cmd = render.burn_cmd(tmp_path / "i.mp4", "s.srt", tmp_path / "o.mp4")
+    joined = " ".join(cmd)
+    margin_px = int(joined.split("MarginV=")[1].split(",")[0]) * render.H / 288
+    # cukup tinggi supaya tidak ketutup caption/tombol TikTok (~15% bawah = 288px),
+    # tapi tidak sampai menempel ke video di area atas
+    assert 400 <= margin_px <= 800, f"margin {margin_px:.0f}px"

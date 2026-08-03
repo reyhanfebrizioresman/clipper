@@ -17,7 +17,9 @@ def cut_cmd(src, start: float, end: float, out_mp4) -> list[str]:
         f"[bgsrc]scale={W}:{H}:force_original_aspect_ratio=increase,"
         f"crop={W}:{H},boxblur=40:2[bg];"
         f"[fgsrc]scale={W}:-2[fg];"
-        "[bg][fg]overlay=(W-w)/2:(H-h)/2[v]"
+        # video dinaikkan ke area atas (bukan dipusatkan) supaya ada ruang di
+        # bawahnya untuk subtitle — di layar HP mata membaca video lalu teks
+        "[bg][fg]overlay=(W-w)/2:(H-h)*0.32[v]"
     )
     return [FFMPEG, "-y", "-ss", f"{start:.3f}", "-i", str(src), "-t", f"{durasi:.3f}",
             "-filter_complex", fc, "-map", "[v]", "-map", "0:a?",
@@ -87,8 +89,10 @@ def burn_cmd(in_mp4, srt_name: str, out_mp4) -> list[str]:
     # tinggi dari YouTube Shorts, jadi marginnya sengaja lebih besar.
     # Lato Black: sans-serif tebal, jauh lebih terbaca di layar HP daripada
     # font bawaan libass. Shadow tipis menambah kontras di latar terang.
+    # MarginV=75 (~500 px dari bawah): di atas caption & tombol TikTok yang
+    # memakan ~15% layar bawah, tapi tetap dekat dengan video di atasnya.
     style = ("FontName=Lato Black,Bold=1,FontSize=13,PrimaryColour=&HFFFFFF&,"
-             "OutlineColour=&H000000&,Outline=2,Shadow=1,MarginV=55,Alignment=2")
+             "OutlineColour=&H000000&,Outline=2,Shadow=1,MarginV=75,Alignment=2")
     return [FFMPEG, "-y", "-i", str(in_mp4),
             "-vf", f"subtitles={srt_name}:force_style='{style}'",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
