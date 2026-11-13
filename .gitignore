@@ -6,3 +6,4 @@ work/
 *.mp3
 *.wav
 .env
+.DS_Store
