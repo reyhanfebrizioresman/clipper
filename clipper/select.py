@@ -65,3 +65,40 @@ def hook(window: Window, min_kata: int = 5, koreksi: dict | None = None) -> str:
         if len(bersih.split()) >= min_kata:
             return bersih
     return rapikan(window.text)[:120] or "(tanpa teks)"
+
+def snap_to_windows(props, segmen: list[Segment], min_s: float, max_s: float) -> list[Window]:
+    """Tempel usulan LLM ke batas kalimat: mulai di awal kalimat terdekat
+    sebelum/di proposal.start, berakhir di akhir segmen (diutamakan akhir
+    kalimat) yang mencakup proposal.end dan menjaga durasi dalam [min_s, max_s]."""
+    hasil: list[Window] = []
+    terlihat: set[tuple[float, float]] = set()
+    for p in props:
+        i = max((k for k in range(len(segmen))
+                 if _mulai_kalimat(segmen, k) and segmen[k].start <= p.start), default=0)
+        if not segmen:
+            break
+        mulai = segmen[i].start
+        kandidat = []  # indeks akhir (inklusif) yang durasinya sah
+        j = i
+        while j < len(segmen) and segmen[j].end - mulai <= max_s:
+            if segmen[j].end - mulai >= min_s:
+                kandidat.append(j)
+            j += 1
+        if not kandidat:
+            continue
+        akhir_kalimat = [k for k in kandidat if segmen[k].text.rstrip().endswith(AKHIR_KALIMAT)]
+        pilih = None
+        for k in (akhir_kalimat or kandidat):
+            if segmen[k].end >= p.end:
+                pilih = k
+                break
+        if pilih is None:
+            pilih = (akhir_kalimat or kandidat)[-1]
+        dipakai = segmen[i:pilih + 1]
+        kunci = (dipakai[0].start, dipakai[-1].end)
+        if kunci in terlihat:
+            continue
+        terlihat.add(kunci)
+        hasil.append(Window(start=kunci[0], end=kunci[1],
+                            text=" ".join(s.text for s in dipakai), segments=dipakai))
+    return hasil
