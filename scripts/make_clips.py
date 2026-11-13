@@ -7,21 +7,14 @@ Unggah tetap manual (aturan platform) — script ini berhenti di file siap kirim
 """
 import argparse
 import json
-import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from clipper import campaign as camp
-from clipper import render, select, source, transcript
-
-
-def jalankan(cmd: list[str], cwd=None) -> None:
-    hasil = subprocess.run(cmd, capture_output=True, cwd=cwd)
-    if hasil.returncode != 0:
-        raise RuntimeError(f"gagal: {' '.join(cmd[:3])}...\n"
-                           f"{hasil.stderr.decode(errors='replace')[-700:]}")
+from clipper import pipeline, source
+from clipper.pipeline import run_subprocess as jalankan
 
 
 def ambil_sumber(target: str, kerja: Path) -> tuple[Path, Path | None]:
@@ -44,17 +37,6 @@ def ambil_sumber(target: str, kerja: Path) -> tuple[Path, Path | None]:
     return video, (teks[0] if teks else None)
 
 
-def transkrip(video: Path, vtt: Path | None) -> list:
-    if vtt:
-        print(f"[transkrip] pakai subtitle bawaan: {vtt.name}")
-        return transcript.parse(vtt.read_text(encoding="utf-8"))
-    print("[transkrip] tidak ada subtitle — jalankan Whisper (butuh beberapa menit)")
-    from faster_whisper import WhisperModel
-    model = WhisperModel("small", device="cpu", compute_type="int8")
-    segmen, _ = model.transcribe(str(video), language="id", vad_filter=True)
-    return [transcript.Segment(s.start, s.end, s.text.strip()) for s in segmen]
-
-
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("brief", help="file JSON brief campaign")
@@ -73,37 +55,24 @@ def main() -> None:
     klip_dir.mkdir(parents=True, exist_ok=True)
 
     video, vtt = ambil_sumber(args.sumber, kerja / "sumber")
-    segmen = transkrip(video, vtt)
+    print(f"[transkrip] {'subtitle bawaan: ' + vtt.name if vtt else 'tidak ada subtitle — Whisper (butuh beberapa menit)'}")
+    segmen = pipeline.transcribe(video, vtt)
     if not segmen:
         raise SystemExit("transkrip kosong — tidak bisa memilih momen")
     print(f"[transkrip] {len(segmen)} segmen, {segmen[-1].end/60:.1f} menit")
 
-    batas_atas = min(c.durasi_maks_s, args.maks_durasi)
-    jendela = select.build_windows(segmen, c.durasi_min_s, batas_atas)
-    peringkat = select.rank(jendela, c.keywords)
-    terbaik = peringkat[args.lewati : args.lewati + args.jumlah]
-    print(f"[pilih] {len(jendela)} kandidat -> ambil {len(terbaik)} "
-          f"(peringkat {args.lewati + 1}-{args.lewati + len(terbaik)})")
+    def lapor(tahap: str, info: dict) -> None:
+        if tahap == "pilih" and "dipilih" in info:
+            print(f"[pilih] ambil {info['dipilih']} "
+                  f"(peringkat {info['dari']}-{info['sampai']})")
+        elif tahap == "render":
+            print(f"[render] {info['nama']} ({info['durasi']:.0f} dtk) ...")
 
-    catatan = []
-    for n, w in enumerate(terbaik, args.lewati + 1):
-        nama = f"{c.slug}-{n:02d}"
-        mentah = klip_dir / f"{nama}-raw.mp4"
-        srt = klip_dir / f"{nama}.srt"
-        final = klip_dir / f"{nama}.mp4"
-        print(f"[render] {nama} ({w.end - w.start:.0f} dtk) ...")
-        jalankan(render.cut_cmd(video, w.start, w.end, mentah))
-        render.write_srt(w, srt, koreksi=c.koreksi)
-        # dijalankan dari folder klip: filter subtitles ffmpeg memakai nama file
-        # relatif (path absolut butuh escaping yang rapuh)
-        jalankan(render.burn_cmd(mentah.resolve(), srt.name, final.resolve()),
-                 cwd=klip_dir)
-        mentah.unlink(missing_ok=True)
-
-        hook = select.hook(w, koreksi=c.koreksi)
-        (klip_dir / f"{nama}.txt").write_text(camp.caption(c, hook), encoding="utf-8")
-        catatan.append({"file": final.name, "mulai": round(w.start, 1),
-                        "durasi": round(w.end - w.start, 1), "hook": hook[:80]})
+    hasil = pipeline.process(c, video, segmen, klip_dir, jumlah=args.jumlah,
+                             lewati=args.lewati, maks_durasi=args.maks_durasi,
+                             on_progress=lapor)
+    catatan = [{"file": r.file, "mulai": r.mulai, "durasi": r.durasi, "hook": r.hook}
+               for r in hasil]
 
     (kerja / "clips.json").write_text(json.dumps(catatan, indent=2, ensure_ascii=False),
                                       encoding="utf-8")
