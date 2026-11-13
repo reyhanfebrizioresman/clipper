@@ -65,7 +65,7 @@ def _parse(teks: str) -> list[Proposal]:
 
 
 class GeminiScorer:
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash",
+    def __init__(self, api_key: str, model: str = "gemini-3.8-flash",
                  call: Callable[[str], str] | None = None):
         self.api_key = api_key
         self.model = model
