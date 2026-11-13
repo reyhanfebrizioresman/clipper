@@ -6,6 +6,9 @@ from typing import Callable
 
 from . import campaign as camp
 from . import render, select, transcript
+from .brain.base import Scorer
+from .config import Settings
+from .styles import STYLES, SubtitleStyle
 from .campaign import Campaign
 from .transcript import Segment
 
@@ -37,6 +40,32 @@ def keyword_chooser(segmen: list[Segment], c: Campaign, min_s: float, max_s: flo
     return peringkat[lewati: lewati + jumlah]
 
 
+def brain_chooser(scorer: Scorer) -> Chooser:
+    """Chooser berbasis otak AI: usulan -> tempel ke batas kalimat -> urut skor."""
+    def pilih(segmen, c, min_s, max_s, jumlah, lewati):
+        props = sorted(scorer.propose(segmen, c, min_s=min_s, max_s=max_s),
+                       key=lambda p: -p.score)
+        hasil: list[select.Window] = []
+        terlihat: set[tuple[float, float]] = set()
+        for p in props:
+            for w in select.snap_to_windows([p], segmen, min_s, max_s):
+                if (w.start, w.end) in terlihat:
+                    continue
+                terlihat.add((w.start, w.end))
+                w.hook_title = p.hook_title
+                w.skor = p.score
+                hasil.append(w)
+        return hasil[lewati: lewati + jumlah]
+    return pilih
+
+
+def make_chooser(settings: Settings) -> Chooser:
+    if settings.ai_provider == "gemini":
+        from .brain.gemini import GeminiScorer
+        return brain_chooser(GeminiScorer(settings.gemini_api_key or ""))
+    return keyword_chooser
+
+
 def transcribe(video: Path, vtt: Path | None, *, whisper_model: str = "small") -> list[Segment]:
     if vtt:
         return transcript.parse(vtt.read_text(encoding="utf-8"))
@@ -49,7 +78,10 @@ def transcribe(video: Path, vtt: Path | None, *, whisper_model: str = "small") -
 def process(c: Campaign, video: Path, segmen: list[Segment], klip_dir: Path, *,
             jumlah: int = 5, lewati: int = 0, maks_durasi: float = 60.0,
             chooser: Chooser = keyword_chooser, run=run_subprocess,
-            on_progress: Progress | None = None) -> list[ClipResult]:
+            on_progress: Progress | None = None,
+            style: SubtitleStyle = STYLES["lato"],
+            reframe_planner: Callable[[Path, select.Window], str | None] | None = None,
+            ) -> list[ClipResult]:
     def lapor(tahap: str, **info) -> None:
         if on_progress:
             on_progress(tahap, info)
@@ -58,7 +90,11 @@ def process(c: Campaign, video: Path, segmen: list[Segment], klip_dir: Path, *,
     klip_dir.mkdir(parents=True, exist_ok=True)
     batas_atas = min(c.durasi_maks_s, maks_durasi)
     lapor("pilih", segmen=len(segmen))
-    terbaik = chooser(segmen, c, c.durasi_min_s, batas_atas, jumlah, lewati)
+    try:
+        terbaik = chooser(segmen, c, c.durasi_min_s, batas_atas, jumlah, lewati)
+    except Exception as e:
+        lapor("peringatan", pesan=f"otak AI gagal ({e}); pakai pemilih kata kunci")
+        terbaik = keyword_chooser(segmen, c, c.durasi_min_s, batas_atas, jumlah, lewati)
     lapor("pilih", dipilih=len(terbaik), dari=lewati + 1, sampai=lewati + len(terbaik))
 
     hasil: list[ClipResult] = []
@@ -68,17 +104,18 @@ def process(c: Campaign, video: Path, segmen: list[Segment], klip_dir: Path, *,
         srt = klip_dir / f"{nama}.srt"
         final = klip_dir / f"{nama}.mp4"
         lapor("render", nama=nama, rank=n, durasi=w.end - w.start)
-        run(render.cut_cmd(video, w.start, w.end, mentah))
+        fg = reframe_planner(video, w) if reframe_planner else None
+        run(render.cut_cmd(video, w.start, w.end, mentah, filtergraph=fg))
         render.write_srt(w, srt, koreksi=c.koreksi)
         # dijalankan dari folder klip: filter subtitles ffmpeg memakai nama file
         # relatif (path absolut butuh escaping yang rapuh)
-        run(render.burn_cmd(mentah.resolve(), srt.name, final.resolve()), cwd=klip_dir)
+        run(render.burn_cmd(mentah.resolve(), srt.name, final.resolve(), style=style), cwd=klip_dir)
         mentah.unlink(missing_ok=True)
 
-        hook = select.hook(w, koreksi=c.koreksi)
+        hook = w.hook_title or select.hook(w, koreksi=c.koreksi)
         (klip_dir / f"{nama}.txt").write_text(camp.caption(c, hook), encoding="utf-8")
         hasil.append(ClipResult(file=final.name, mulai=round(w.start, 1),
                                 durasi=round(w.end - w.start, 1), hook=hook[:80],
-                                rank=n, skor=None))
+                                rank=n, skor=w.skor))
     lapor("selesai", jumlah=len(hasil))
     return hasil

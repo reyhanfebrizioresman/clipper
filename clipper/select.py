@@ -16,6 +16,8 @@ class Window:
     end: float
     text: str
     segments: list
+    hook_title: str = ""
+    skor: float | None = None
 
 def _mulai_kalimat(segments: list[Segment], i: int) -> bool:
     # subtitle otomatis dipecah per beberapa kata, jadi "batas segmen" saja tidak

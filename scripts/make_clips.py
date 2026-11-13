@@ -7,6 +7,7 @@ Unggah tetap manual (aturan platform) — script ini berhenti di file siap kirim
 """
 import argparse
 import json
+from dataclasses import replace
 import sys
 from pathlib import Path
 
@@ -14,6 +15,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from clipper import campaign as camp
 from clipper import pipeline, source
+from clipper.config import load_settings
+from clipper.styles import STYLES
 from clipper.pipeline import run_subprocess as jalankan
 
 
@@ -46,9 +49,14 @@ def main() -> None:
                     help="lewati N kandidat teratas (untuk membuat batch lanjutan)")
     ap.add_argument("--maks-durasi", type=float, default=60,
                     help="klip pendek lebih disukai algoritma TikTok/Reels (default 60 dtk)")
+    ap.add_argument("--ai", choices=["keyword", "gemini"], default=None,
+                    help="pemilih momen (default: dari ~/.clipper.toml / env, else keyword)")
     ap.add_argument("--keluaran", default="work")
     args = ap.parse_args()
 
+    settings = load_settings()
+    if args.ai:
+        settings = replace(settings, ai_provider=args.ai)
     c = camp.load(args.brief)
     kerja = Path(args.keluaran) / c.slug
     klip_dir = kerja / "clips"
@@ -65,11 +73,15 @@ def main() -> None:
         if tahap == "pilih" and "dipilih" in info:
             print(f"[pilih] ambil {info['dipilih']} "
                   f"(peringkat {info['dari']}-{info['sampai']})")
+        elif tahap == "peringatan":
+            print(f"[peringatan] {info.get('pesan')}")
         elif tahap == "render":
             print(f"[render] {info['nama']} ({info['durasi']:.0f} dtk) ...")
 
     hasil = pipeline.process(c, video, segmen, klip_dir, jumlah=args.jumlah,
                              lewati=args.lewati, maks_durasi=args.maks_durasi,
+                             chooser=pipeline.make_chooser(settings),
+                             style=STYLES.get(settings.subtitle_style, STYLES["lato"]),
                              on_progress=lapor)
     catatan = [{"file": r.file, "mulai": r.mulai, "durasi": r.durasi, "hook": r.hook}
                for r in hasil]
