@@ -1,3 +1,6 @@
+import pytest
+
+from clipper.brain.base import BrainError
 from clipper.brain.gemini import GeminiScorer
 from clipper.campaign import Campaign
 from clipper.transcript import Segment
@@ -25,8 +28,29 @@ def test_gemini_tolerates_code_fence_and_bad_items():
     assert len(props) == 1 and props[0].score == 70
 
 
-def test_gemini_call_exception_returns_empty():
+def test_gemini_all_chunks_fail_raises():
     def boom(p):
         raise RuntimeError("net")
     s = GeminiScorer(api_key="x", call=boom)
-    assert s.propose([Segment(0, 60, "...")], CAMP, min_s=15, max_s=60) == []
+    with pytest.raises(BrainError):
+        s.propose([Segment(0, 60, "...")], CAMP, min_s=15, max_s=60)
+
+
+def test_gemini_partial_chunk_failure_keeps_successes():
+    seg = [Segment(i, i + 1, "kata " * 20) for i in range(200)]   # >=2 chunks
+    n = {"i": 0}
+
+    def call(p):
+        n["i"] += 1
+        if n["i"] == 1:
+            raise RuntimeError("transient")
+        return '[{"start":1,"end":30,"hook_title":"a","reason":"r","score":70}]'
+    s = GeminiScorer(api_key="x", call=call)
+    props = s.propose(seg, CAMP, min_s=15, max_s=60)
+    assert n["i"] >= 2 and len(props) == 1
+
+
+def test_gemini_default_call_empty_key_fails_fast():
+    s = GeminiScorer(api_key="")
+    with pytest.raises(BrainError):
+        s.propose([Segment(0, 60, "...")], CAMP, min_s=15, max_s=60)

@@ -6,6 +6,10 @@ from clipper.campaign import Campaign
 from clipper.transcript import Segment
 
 
+class BrainError(Exception):
+    """Otak gagal total (mis. API key salah/kosong, jaringan mati)."""
+
+
 @dataclass
 class Proposal:
     start: float

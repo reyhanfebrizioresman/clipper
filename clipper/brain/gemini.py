@@ -3,7 +3,7 @@ import json
 import re
 from typing import Callable
 
-from clipper.brain.base import Proposal
+from clipper.brain.base import BrainError, Proposal
 from clipper.brain.chunk import chunk_segments, merge_rerank
 from clipper.campaign import Campaign
 from clipper.transcript import Segment
@@ -29,6 +29,8 @@ Transkrip:
 
 def _default_call(api_key: str, model: str) -> Callable[[str], str]:
     def call(prompt: str) -> str:
+        if not api_key:
+            raise BrainError("GEMINI/GOOGLE_API_KEY kosong")
         from google import genai  # lazy: hanya dibutuhkan saat benar-benar memanggil API
         client = genai.Client(api_key=api_key)
         resp = client.models.generate_content(model=model, contents=prompt)
@@ -73,10 +75,17 @@ class GeminiScorer:
     def propose(self, segmen: list[Segment], c: Campaign, *,
                 min_s: float, max_s: float) -> list[Proposal]:
         props: list[Proposal] = []
-        for chunk in chunk_segments(segmen):
+        chunks = chunk_segments(segmen)
+        gagal = 0
+        terakhir: Exception | None = None
+        for chunk in chunks:
             try:
                 reply = self._call(self._prompt(chunk, c, min_s, max_s))
-            except Exception:
+            except Exception as e:
+                gagal += 1
+                terakhir = e
                 continue
             props.extend(_parse(reply))
+        if chunks and gagal == len(chunks):
+            raise BrainError(f"semua chunk gagal dipanggil: {terakhir}") from terakhir
         return merge_rerank(props)
