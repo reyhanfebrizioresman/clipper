@@ -100,12 +100,14 @@ def make_reframe_planner(settings: Settings, *, fps_sample: float = 5, detector=
     return planner
 
 
-def transcribe(video: Path, vtt: Path | None, *, whisper_model: str = "small") -> list[Segment]:
+def transcribe(video: Path, vtt: Path | None, *, whisper_model: str = "small",
+               language: str | None = None) -> list[Segment]:
     if vtt:
         return transcript.parse(vtt.read_text(encoding="utf-8"))
     import faster_whisper  # lazy: berat, hanya dipakai saat tidak ada subtitle
     model = faster_whisper.WhisperModel(whisper_model, device="cpu", compute_type="int8")
-    segmen, _ = model.transcribe(str(video), language="id", vad_filter=True)
+    # language=None → auto-deteksi bahasa (jangan paksa 'id' ke audio non-Indonesia)
+    segmen, _ = model.transcribe(str(video), language=language, vad_filter=True)
     return [Segment(s.start, s.end, s.text.strip()) for s in segmen]
 
 
