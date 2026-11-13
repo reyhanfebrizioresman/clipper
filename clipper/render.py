@@ -2,25 +2,21 @@
 import os
 from pathlib import Path
 
+from clipper.reframe import blur_pad_graph
+from clipper.styles import STYLES, SubtitleStyle
 from clipper.transcript import (akhir_kalimat, buang_filler,
                                 koreksi_istilah, rapikan_kapital)
 
 FFMPEG = os.getenv("FFMPEG_BIN", "ffmpeg")
 W, H = 1080, 1920
 
-def cut_cmd(src, start: float, end: float, out_mp4) -> list[str]:
+def cut_cmd(src, start: float, end: float, out_mp4, *,
+            filtergraph: str | None = None) -> list[str]:
     # -ss ditaruh sebelum -i: ffmpeg loncat langsung ke posisi, tidak mendekode dari awal.
-    # Video sumber (biasanya 16:9) ditaruh di tengah, sisa layar diisi versi blur.
+    # Default: video sumber ditaruh di sepertiga atas, sisa layar diisi versi blur
+    # (satu sumber kebenaran: reframe.blur_pad_graph).
     durasi = end - start
-    fc = (
-        "[0:v]split=2[bgsrc][fgsrc];"
-        f"[bgsrc]scale={W}:{H}:force_original_aspect_ratio=increase,"
-        f"crop={W}:{H},boxblur=40:2[bg];"
-        f"[fgsrc]scale={W}:-2[fg];"
-        # video di sepertiga atas — cukup tinggi supaya subtitle di bawahnya
-        # bebas dari UI TikTok, tapi tidak menyisakan rongga menganga
-        "[bg][fg]overlay=(W-w)/2:(H-h)*0.38[v]"
-    )
+    fc = filtergraph if filtergraph is not None else blur_pad_graph(W, H)
     return [FFMPEG, "-y", "-ss", f"{start:.3f}", "-i", str(src), "-t", f"{durasi:.3f}",
             "-filter_complex", fc, "-map", "[v]", "-map", "0:a?",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
@@ -83,17 +79,9 @@ def write_srt(window, out_path, maks_karakter: int = 46, koreksi: dict | None = 
         baris += [str(n), f"{_ts(mulai)} --> {_ts(selesai)}", teks, ""]
     Path(out_path).write_text("\n".join(baris), encoding="utf-8")
 
-def burn_cmd(in_mp4, srt_name: str, out_mp4) -> list[str]:
-    # libass menskalakan angka style ke tinggi referensi 288 (faktor 1920/288 ~ 6,7):
-    # FontSize=13 ~ 87 px, MarginV=55 ~ 367 px dari bawah — TikTok menaruh UI lebih
-    # tinggi dari YouTube Shorts, jadi marginnya sengaja lebih besar.
-    # Lato Black: sans-serif tebal, jauh lebih terbaca di layar HP daripada
-    # font bawaan libass. Shadow tipis menambah kontras di latar terang.
-    # MarginV=95 (~500 px dari bawah): di atas caption & tombol TikTok yang
-    # memakan ~15% layar bawah, tapi tetap dekat dengan video di atasnya.
-    style = ("FontName=Lato Black,Bold=1,FontSize=13,PrimaryColour=&HFFFFFF&,"
-             "OutlineColour=&H000000&,Outline=2,Shadow=1,MarginV=95,Alignment=2")
+def burn_cmd(in_mp4, srt_name: str, out_mp4, *,
+             style: SubtitleStyle = STYLES["lato"]) -> list[str]:
     return [FFMPEG, "-y", "-i", str(in_mp4),
-            "-vf", f"subtitles={srt_name}:force_style='{style}'",
+            "-vf", f"subtitles={srt_name}:force_style='{style.force_style}'",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
             "-c:a", "copy", str(out_mp4)]

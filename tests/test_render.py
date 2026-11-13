@@ -193,3 +193,13 @@ def test_subtitle_margin_clears_tiktok_ui_but_stays_near_video(tmp_path):
     # cukup tinggi supaya tidak ketutup caption/tombol TikTok (~15% bawah = 288px),
     # tapi tidak sampai menempel ke video di area atas
     assert 400 <= margin_px <= 800, f"margin {margin_px:.0f}px"
+
+
+def test_cut_cmd_injects_custom_filtergraph():
+    cmd = render.cut_cmd("s.mp4", 0, 5, "o.mp4", filtergraph="[0:v]crop=1080:1920[v]")
+    assert "crop=1080:1920" in " ".join(cmd)
+    assert "boxblur" not in " ".join(cmd)
+
+
+def test_cut_cmd_default_still_blurpad():
+    assert "boxblur" in " ".join(render.cut_cmd("s.mp4", 0, 5, "o.mp4"))

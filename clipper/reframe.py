@@ -92,7 +92,7 @@ def plan_reframe(frames: list[list[FaceBox]], src_w: int, src_h: int, *,
     return SingleFace(smooth_path(raw, max_dx_per_s=src_w * 0.15))
 
 
-def _blur_pad(out_w: int, out_h: int) -> str:
+def blur_pad_graph(out_w: int = 1080, out_h: int = 1920) -> str:
     return (
         "[0:v]split=2[bgsrc][fgsrc];"
         f"[bgsrc]scale={out_w}:{out_h}:force_original_aspect_ratio=increase,"
@@ -120,7 +120,7 @@ def _x_expr(points: list[tuple[float, float]], crop_w: float, src_w: int) -> str
 def build_filter(plan: SingleFace | BlurPad, src_w: int, src_h: int,
                  out_w=1080, out_h=1920) -> str:
     if isinstance(plan, BlurPad) or not plan.centres:
-        return _blur_pad(out_w, out_h)
+        return blur_pad_graph(out_w, out_h)
     crop_w = min(src_w, src_h * out_w / out_h)
     cw = int(crop_w) // 2 * 2
     x = _x_expr(plan.centres, cw, src_w)
