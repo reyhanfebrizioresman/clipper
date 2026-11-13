@@ -102,5 +102,7 @@ def snap_to_windows(props, segmen: list[Segment], min_s: float, max_s: float) ->
             continue
         terlihat.add(kunci)
         hasil.append(Window(start=kunci[0], end=kunci[1],
-                            text=" ".join(s.text for s in dipakai), segments=dipakai))
+                            text=" ".join(s.text for s in dipakai), segments=dipakai,
+                            hook_title=getattr(p, "hook_title", ""),
+                            skor=getattr(p, "score", None)))
     return hasil

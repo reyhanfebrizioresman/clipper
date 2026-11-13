@@ -46,13 +46,6 @@ def brain_chooser(scorer: Scorer) -> Chooser:
         props = sorted(scorer.propose(segmen, c, min_s=min_s, max_s=max_s),
                        key=lambda p: -p.score)
         windows = select.snap_to_windows(props, segmen, min_s, max_s)
-        # snap_to_windows menjaga urutan & membuang duplikat/usulan tak sah, jadi
-        # petakan balik jendela -> usulan lewat batas kalimat yang dipilihnya
-        for w in windows:
-            asal = next((p for p in props if w.start <= p.start < w.end), None) \
-                or min(props, key=lambda p: abs(p.start - w.start))
-            w.hook_title = asal.hook_title
-            w.skor = asal.score
         return windows[lewati: lewati + jumlah]
     return pilih
 
