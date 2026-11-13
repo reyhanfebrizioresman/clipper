@@ -69,7 +69,15 @@ def _probe_dims(video: Path) -> tuple[int, int]:
     return int(w), int(h)
 
 
-def make_reframe_planner(settings: Settings, *, fps_sample: float = 5):
+def rebase_frames(frames, start: float, end: float, fps_sample: float):
+    """Ambil sampel dalam [start, end] dan geser waktunya ke relatif-klip (0..durasi):
+    -ss sebelum -i membuat `t` di filtergraph dimulai dari 0."""
+    from .reframe import FaceBox
+    potong = frames[int(start * fps_sample): int(end * fps_sample)]
+    return [[FaceBox(fb.t - start, fb.cx, fb.cy, fb.w, fb.h) for fb in f] for f in potong]
+
+
+def make_reframe_planner(settings: Settings, *, fps_sample: float = 5, detector=None):
     """Planner (video, window) -> filtergraph | None. Semua impor/probe malas;
     gagal apa pun -> None (cut_cmd memakai blur-pad)."""
     if not settings.reframe:
@@ -82,9 +90,10 @@ def make_reframe_planner(settings: Settings, *, fps_sample: float = 5):
             key = str(video)
             if key not in cache:
                 sw, sh = _probe_dims(video)
-                cache[key] = (sw, sh, reframe.detect_faces(video, sw, sh, fps_sample=fps_sample))
+                cache[key] = (sw, sh, reframe.detect_faces(video, sw, sh, fps_sample=fps_sample,
+                                                              detector=detector))
             sw, sh, frames = cache[key]
-            potong = frames[int(w.start * fps_sample): int(w.end * fps_sample)]
+            potong = rebase_frames(frames, w.start, w.end, fps_sample)
             return reframe.build_filter(reframe.plan_reframe(potong, sw, sh), sw, sh)
         except Exception:
             return None
@@ -137,7 +146,7 @@ def process(c: Campaign, video: Path, segmen: list[Segment], klip_dir: Path, *,
         run(render.burn_cmd(mentah.resolve(), srt.name, final.resolve(), style=style), cwd=klip_dir)
         mentah.unlink(missing_ok=True)
 
-        hook = w.hook_title or select.hook(w, koreksi=c.koreksi)
+        hook = (w.hook_title or "").strip() or select.hook(w, koreksi=c.koreksi)
         (klip_dir / f"{nama}.txt").write_text(camp.caption(c, hook), encoding="utf-8")
         hasil.append(ClipResult(file=final.name, mulai=round(w.start, 1),
                                 durasi=round(w.end - w.start, 1), hook=hook[:80],

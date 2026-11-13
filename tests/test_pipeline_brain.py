@@ -96,3 +96,26 @@ def test_reframe_planner_returns_none_on_failure(monkeypatch, tmp_path):
     monkeypatch.setattr("clipper.reframe.detect_faces", boom)
     planner = make_reframe_planner(Settings(reframe=True))
     assert planner(tmp_path / "v.mp4", Window(0, 10, "t", [])) is None
+
+
+def test_reframe_planner_uses_clip_relative_time(tmp_path, monkeypatch):
+    import re
+    import clipper.pipeline as pl
+    from clipper.reframe import FaceBox
+    monkeypatch.setattr(pl, "_probe_dims", lambda v: (1920, 1080))
+    fps = 5
+    def det(video, w, h, f):  # sumber 200 dtk; wajah bergeser kanan seiring waktu
+        return [[FaceBox(i / fps, 300 + i * 4, 500, 100, 100)] for i in range(200 * fps)]
+    planner = make_reframe_planner(Settings(reframe=True), fps_sample=fps, detector=det)
+    fg = planner(tmp_path / "v.mp4", Window(120, 150, "t", []))
+    assert fg and "crop=" in fg
+    ts = [float(x) for x in re.findall(r"lt\(t,([0-9.]+)\)", fg)]
+    assert ts and max(ts) <= 30.5
+
+
+def test_whitespace_hook_title_still_builds_caption(tmp_path):
+    w = Window(0, 10, "Ini kalimat pembuka yang cukup panjang.", SEG[:2], hook_title="  ")
+    res = process(CAMP, tmp_path / "v.mp4", SEG, tmp_path, jumlah=1,
+                  chooser=lambda *a: [w], run=lambda c, cwd=None: None)
+    assert "#Wajib" in (tmp_path / res[0].file.replace(".mp4", ".txt")).read_text()
+    assert res[0].hook.startswith("Ini kalimat")

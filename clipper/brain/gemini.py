@@ -27,12 +27,16 @@ Transkrip:
 """
 
 
+REQUEST_TIMEOUT_MS = 90_000  # panggilan macet harus gagal agar fallback jalan
+
+
 def _default_call(api_key: str, model: str) -> Callable[[str], str]:
     def call(prompt: str) -> str:
         if not api_key:
             raise BrainError("GEMINI/GOOGLE_API_KEY kosong")
         from google import genai  # lazy: hanya dibutuhkan saat benar-benar memanggil API
-        client = genai.Client(api_key=api_key)
+        client = genai.Client(api_key=api_key,
+                              http_options={"timeout": REQUEST_TIMEOUT_MS})
         resp = client.models.generate_content(model=model, contents=prompt)
         return resp.text or ""
     return call
@@ -51,7 +55,7 @@ def _parse(teks: str) -> list[Proposal]:
     for d in data:
         try:
             p = Proposal(start=float(d["start"]), end=float(d["end"]),
-                         hook_title=str(d.get("hook_title", "")),
+                         hook_title=str(d.get("hook_title", "")).strip(),
                          reason=str(d.get("reason", "")), score=float(d["score"]))
         except (KeyError, TypeError, ValueError, AttributeError):
             continue
