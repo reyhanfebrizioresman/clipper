@@ -1,7 +1,7 @@
 from clipper.brain.base import Proposal
 from clipper.campaign import Campaign
 from clipper.config import Settings, load_settings
-from clipper.pipeline import brain_chooser, keyword_chooser, make_chooser, process
+from clipper.pipeline import brain_chooser, keyword_chooser, make_chooser, make_reframe_planner, process
 from clipper.select import Window
 from clipper.transcript import Segment
 
@@ -31,8 +31,12 @@ def test_pipeline_falls_back_to_keyword_when_brain_errors(tmp_path):
     def boom(*a, **k): raise RuntimeError("no api key")
     warns = []
     res = process(CAMP, tmp_path / "v.mp4", SEG, tmp_path, jumlah=1, chooser=boom,
-                  run=lambda c, cwd=None: None, on_progress=lambda s, i: warns.append(s))
-    assert res and "peringatan" in warns
+                  run=lambda c, cwd=None: None, on_progress=lambda s, i: warns.append((s, i)))
+    assert res and res[0].skor is None
+    peringatan = [i for s, i in warns if s == "peringatan"]
+    assert peringatan and "no api key" in peringatan[0]["pesan"]
+    kw = keyword_chooser(SEG, CAMP, CAMP.durasi_min_s, 60.0, 1, 0)[0]
+    assert res[0].mulai == round(kw.start, 1)
 
 
 def test_ai_hook_title_and_score_used(tmp_path):
@@ -69,3 +73,26 @@ def test_load_settings(tmp_path):
     t.write_text('ai_provider = "gemini"\nsubtitle_style = "bold"\n')
     s = load_settings({"GEMINI_API_KEY": "abc"}, t)
     assert (s.ai_provider, s.subtitle_style, s.gemini_api_key) == ("gemini", "bold", "abc")
+
+
+def test_make_chooser_falls_back_when_construction_fails(monkeypatch):
+    import sys, types
+    stub = types.ModuleType("clipper.brain.gemini")
+    def boom(*a, **k): raise RuntimeError("ctor")
+    stub.GeminiScorer = boom
+    monkeypatch.setitem(sys.modules, "clipper.brain.gemini", stub)
+    monkeypatch.setattr("clipper.brain.gemini", stub, raising=False)
+    assert make_chooser(Settings(ai_provider="gemini")) is keyword_chooser
+
+
+def test_reframe_planner_none_when_disabled():
+    assert make_reframe_planner(Settings(reframe=False)) is None
+
+
+def test_reframe_planner_returns_none_on_failure(monkeypatch, tmp_path):
+    import clipper.pipeline as pl
+    def boom(*a, **k): raise ImportError("no mediapipe")
+    monkeypatch.setattr(pl, "_probe_dims", lambda v: (1920, 1080))
+    monkeypatch.setattr("clipper.reframe.detect_faces", boom)
+    planner = make_reframe_planner(Settings(reframe=True))
+    assert planner(tmp_path / "v.mp4", Window(0, 10, "t", [])) is None

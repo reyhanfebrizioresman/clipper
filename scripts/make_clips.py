@@ -81,6 +81,7 @@ def main() -> None:
     hasil = pipeline.process(c, video, segmen, klip_dir, jumlah=args.jumlah,
                              lewati=args.lewati, maks_durasi=args.maks_durasi,
                              chooser=pipeline.make_chooser(settings),
+                             reframe_planner=pipeline.make_reframe_planner(settings),
                              style=STYLES.get(settings.subtitle_style, STYLES["lato"]),
                              on_progress=lapor)
     catatan = [{"file": r.file, "mulai": r.mulai, "durasi": r.durasi, "hook": r.hook}

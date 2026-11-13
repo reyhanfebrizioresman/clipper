@@ -45,25 +45,57 @@ def brain_chooser(scorer: Scorer) -> Chooser:
     def pilih(segmen, c, min_s, max_s, jumlah, lewati):
         props = sorted(scorer.propose(segmen, c, min_s=min_s, max_s=max_s),
                        key=lambda p: -p.score)
-        hasil: list[select.Window] = []
-        terlihat: set[tuple[float, float]] = set()
-        for p in props:
-            for w in select.snap_to_windows([p], segmen, min_s, max_s):
-                if (w.start, w.end) in terlihat:
-                    continue
-                terlihat.add((w.start, w.end))
-                w.hook_title = p.hook_title
-                w.skor = p.score
-                hasil.append(w)
-        return hasil[lewati: lewati + jumlah]
+        windows = select.snap_to_windows(props, segmen, min_s, max_s)
+        # snap_to_windows menjaga urutan & membuang duplikat/usulan tak sah, jadi
+        # petakan balik jendela -> usulan lewat batas kalimat yang dipilihnya
+        for w in windows:
+            asal = next((p for p in props if w.start <= p.start < w.end), None) \
+                or min(props, key=lambda p: abs(p.start - w.start))
+            w.hook_title = asal.hook_title
+            w.skor = asal.score
+        return windows[lewati: lewati + jumlah]
     return pilih
 
 
 def make_chooser(settings: Settings) -> Chooser:
     if settings.ai_provider == "gemini":
-        from .brain.gemini import GeminiScorer
-        return brain_chooser(GeminiScorer(settings.gemini_api_key or ""))
+        try:
+            from .brain.gemini import GeminiScorer
+            return brain_chooser(GeminiScorer(settings.gemini_api_key or ""))
+        except Exception:
+            return keyword_chooser
     return keyword_chooser
+
+
+def _probe_dims(video: Path) -> tuple[int, int]:
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+         "stream=width,height", "-of", "csv=p=0:s=x", str(video)],
+        capture_output=True, check=True).stdout.decode().strip()
+    w, h = out.split("x")
+    return int(w), int(h)
+
+
+def make_reframe_planner(settings: Settings, *, fps_sample: float = 5):
+    """Planner (video, window) -> filtergraph | None. Semua impor/probe malas;
+    gagal apa pun -> None (cut_cmd memakai blur-pad)."""
+    if not settings.reframe:
+        return None
+    cache: dict = {}
+
+    def planner(video: Path, w: select.Window) -> str | None:
+        try:
+            from . import reframe
+            key = str(video)
+            if key not in cache:
+                sw, sh = _probe_dims(video)
+                cache[key] = (sw, sh, reframe.detect_faces(video, sw, sh, fps_sample=fps_sample))
+            sw, sh, frames = cache[key]
+            potong = frames[int(w.start * fps_sample): int(w.end * fps_sample)]
+            return reframe.build_filter(reframe.plan_reframe(potong, sw, sh), sw, sh)
+        except Exception:
+            return None
+    return planner
 
 
 def transcribe(video: Path, vtt: Path | None, *, whisper_model: str = "small") -> list[Segment]:
