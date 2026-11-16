@@ -61,3 +61,12 @@ def test_subtitle_cmd_is_separate_and_indonesian_only(tmp_path):
     langs = cmd[cmd.index("--sub-langs") + 1]
     assert langs == "id", f"minta {langs} — satu bahasa saja supaya tidak kena 429"
     assert "--sleep-requests" in cmd              # beri jeda supaya tidak kena 429
+
+
+def test_yt_dlp_gets_explicit_deno_path(monkeypatch, tmp_path):
+    from clipper import source
+    deno = tmp_path / "deno"
+    deno.write_text("")
+    monkeypatch.setenv("CLIPPER_DENO", str(deno))
+    cmd = source.download_cmd("https://youtu.be/abc123", tmp_path)
+    assert cmd[cmd.index("--js-runtimes") + 1] == f"deno:{deno}"
