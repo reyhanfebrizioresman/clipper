@@ -13,3 +13,42 @@ Alur: unduh (yt-dlp) → transkrip (subtitle bawaan, atau Whisper kalau tidak ad
 
 **Unggah tetap manual.** TikTok/Instagram melarang unggah otomatis; script berhenti
 di file siap kirim. Aturan campaign (durasi, hashtag, larangan) ada di `campaigns/*.json`.
+
+## Server MCP (pintu 2)
+
+Klien AI kamu sendiri (Claude Code / Claude Desktop / Codex) yang memilih momen dan menulis
+hook; engine yang memotong, memberi subtitle, dan menulis caption. Server tidak memanggil LLM.
+
+```
+.venv/bin/python scripts/mcp_server.py                     # stdio
+.venv/bin/python scripts/mcp_server.py --http --port 8765  # streamable HTTP (127.0.0.1)
+```
+
+Dari mesin lain lewat SSH (konfigurasi Claude Code, `~/.claude.json` → `mcpServers`):
+
+```json
+"clipper": {"type": "stdio", "command": "ssh",
+  "args": ["-T", "-o", "BatchMode=yes", "reyhan",
+           "/home/reyhan/clipper-v2/.venv/bin/python",
+           "/home/reyhan/clipper-v2/scripts/mcp_server.py"]}
+```
+
+Tool cepat: `list_campaigns`, `get_campaign_brief`, `save_campaign_brief`, `list_sources`,
+`get_transcript`, `list_candidate_windows`, `list_clips`, `get_clip`.
+
+Tool job (kerja panjang): `fetch_source`, `render_clips`, `auto_clips` berjalan di latar.
+Tool menunggu paling lama `tunggu_s` (bawaan 45 dtk, aman untuk batas waktu Codex), lalu
+mengembalikan `{job_id, status}`; pantau dengan `job_status`, hentikan dengan `cancel_job`
+(ffmpeg/yt-dlp dibunuh), lihat semua dengan `list_jobs`. Job hidup selama sesi server;
+hasilnya (transkrip, klip) tetap di disk.
+
+Reframe ikut-wajah memakai MediaPipe Tasks `FaceDetector` (dideteksi per 3 petak lebar frame
+lalu digabung NMS, karena model short-range melewatkan wajah di bidikan lebar) dengan model
+`models/blaze_face_short_range.tflite` (atau env `CLIPPER_FACE_MODEL`). API lama
+`mp.solutions` sudah dihapus sejak mediapipe 0.10.30. Tanpa model, klip memakai blur-pad
+dan peringatannya muncul di progres job / stderr. Hasil deteksi wajah di-cache per sumber
+di `work/_sources/<source_id>/wajah-5fps.json`. Inti logikanya di `clipper/service.py` (dipakai ulang web app nanti).
+
+Penyimpanan: `work/_sources/<source_id>/` (cache unduhan + transkrip) dan
+`work/<campaign>/<source_id>/clips/` (mp4 + srt + caption .txt, manifest `clips.json`).
+Env opsional: `CLIPPER_WORK`, `CLIPPER_CAMPAIGNS`, `GEMINI_API_KEY` (untuk `auto_clips ai=gemini`).
