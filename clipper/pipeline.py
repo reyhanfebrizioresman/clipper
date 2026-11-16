@@ -106,6 +106,33 @@ def make_reframe_planner(settings: Settings, *, fps_sample: float = 5, detector=
     return planner
 
 
+# Whisper (small) untuk bahasa Indonesia sering menulis tanpa tanda baca sama sekali;
+# padahal pemilihan potongan mencari awal kalimat dari tanda baca (select.py). Contoh
+# kalimat bertanda baca di initial_prompt membuat Whisper ikut menulis tanda baca
+# (uji podcast FTM: 0% -> 65% segmen berakhir tanda baca).
+PROMPT_TANDA_BACA = {
+    "id": "Halo, selamat datang. Hari ini kita ngobrol santai, ya? Betul. "
+          "Jadi, menurut kamu gimana? Menarik, kan.",
+}
+
+
+def whisper_segments(model, video: Path, language: str | None = None):
+    """Jalankan Whisper dengan prompt tanda baca sesuai bahasa. Bahasa dideteksi dulu
+    bila tidak diberikan: prompt Indonesia ke audio bahasa lain bisa membelokkan hasil.
+    Audio didekode sekali dan dipakai untuk deteksi maupun transkripsi."""
+    import faster_whisper
+    dekode = getattr(faster_whisper, "decode_audio", None)
+    sr = getattr(getattr(model, "feature_extractor", None), "sampling_rate", 16000)
+    audio = dekode(str(video), sampling_rate=sr) if dekode else str(video)
+    if language is None and dekode is not None and hasattr(model, "detect_language"):
+        try:
+            language = model.detect_language(audio, vad_filter=True)[0]
+        except Exception:
+            language = None  # biarkan transcribe mendeteksi sendiri, tanpa prompt
+    return model.transcribe(audio, language=language, vad_filter=True,
+                            initial_prompt=PROMPT_TANDA_BACA.get(language or ""))
+
+
 def transcribe(video: Path, vtt: Path | None, *, whisper_model: str = "small",
                language: str | None = None) -> list[Segment]:
     if vtt:
@@ -113,7 +140,7 @@ def transcribe(video: Path, vtt: Path | None, *, whisper_model: str = "small",
     import faster_whisper  # lazy: berat, hanya dipakai saat tidak ada subtitle
     model = faster_whisper.WhisperModel(whisper_model, device="cpu", compute_type="int8")
     # language=None → auto-deteksi bahasa (jangan paksa 'id' ke audio non-Indonesia)
-    segmen, _ = model.transcribe(str(video), language=language, vad_filter=True)
+    segmen, _ = whisper_segments(model, video, language)
     return [Segment(s.start, s.end, s.text.strip()) for s in segmen]
 
 
