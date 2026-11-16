@@ -1,5 +1,6 @@
 """Orkestrasi video -> klip 9:16, sebagai pustaka yang bisa diimpor (CLI & web)."""
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -95,7 +96,12 @@ def make_reframe_planner(settings: Settings, *, fps_sample: float = 5, detector=
             sw, sh, frames = cache[key]
             potong = rebase_frames(frames, w.start, w.end, fps_sample)
             return reframe.build_filter(reframe.plan_reframe(potong, sw, sh), sw, sh)
-        except Exception:
+        except Exception as e:
+            # tetap jalan dengan blur-pad, tapi jangan diam: dulu mediapipe yang rusak
+            # membuat reframe tak pernah aktif tanpa ada yang tahu
+            if not cache.get("_sudah_lapor"):
+                cache["_sudah_lapor"] = True
+                print(f"[peringatan] reframe gagal ({e}); pakai blur-pad", file=sys.stderr)
             return None
     return planner
 

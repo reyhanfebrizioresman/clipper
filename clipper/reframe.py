@@ -1,6 +1,7 @@
 """Reframe 16:9 -> 9:16: ikuti satu wajah (crop), atau blur-pad kalau ragu."""
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -27,33 +28,108 @@ class BlurPad:
     pass
 
 
-def _mediapipe_detector(video, src_w: int, src_h: int, fps_sample: float) -> list[list[FaceBox]]:
-    # Import malas: mediapipe/cv2 hanya dibutuhkan di sini.
-    import cv2
-    import mediapipe as mp
+# Petak deteksi, sebagai pecahan lebar frame. BlazeFace short-range memperkecil gambar
+# ke 128 px, sehingga wajah di bidikan lebar (podcast berdua, panggung) tidak tertangkap.
+# Mendeteksi per petak membuat wajah ~2x lebih besar di mata model; deteksi ganda di
+# daerah tumpang tindih digabung dengan NMS (gabung_deteksi).
+PETAK: tuple[tuple[float, float], ...] = ((0.0, 0.4), (0.3, 0.7), (0.6, 1.0))
+LEBAR_DEKODE = 1280
 
-    cap = cv2.VideoCapture(str(video))
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    step = max(1, round(fps / fps_sample))
+
+def _iou(a, b) -> float:
+    ax1, ay1, bx1, by1 = a[0] + a[2], a[1] + a[3], b[0] + b[2], b[1] + b[3]
+    iw = max(0.0, min(ax1, bx1) - max(a[0], b[0]))
+    ih = max(0.0, min(ay1, by1) - max(a[1], b[1]))
+    inter = iw * ih
+    return inter / (a[2] * a[3] + b[2] * b[3] - inter + 1e-9)
+
+
+def gabung_deteksi(kotak: list[tuple], ambang: float = 0.3) -> list[tuple]:
+    """NMS: kotak (x, y, w, h, skor); yang saling tumpang tindih > ambang disatukan,
+    kotak berskor tertinggi dipertahankan."""
+    simpan: list[tuple] = []
+    for k in sorted(kotak, key=lambda k: -k[4]):
+        if all(_iou(k, s) < ambang for s in simpan):
+            simpan.append(k)
+    return simpan
+
+
+def deteksi_petak(detect: Callable, frame, petak=PETAK) -> list[tuple]:
+    """detect(gambar_rgb) -> [(x, y, w, h, skor)] dalam piksel gambar itu.
+    Jalankan per petak, geser x ke koordinat frame, lalu gabungkan."""
+    import numpy as np
+    lebar = frame.shape[1]
+    hasil = []
+    for x0f, x1f in petak:
+        x0, x1 = int(x0f * lebar), int(x1f * lebar)
+        for x, y, w, h, skor in detect(np.ascontiguousarray(frame[:, x0:x1])):
+            hasil.append((x + x0, y, w, h, skor))
+    return gabung_deteksi(hasil)
+
+
+def _model_wajah() -> str:
+    """Model BlazeFace untuk MediaPipe Tasks (API lama mp.solutions sudah dihapus
+    sejak mediapipe 0.10.30, jadi detektor lama gagal diam-diam -> selalu blur-pad)."""
+    p = Path(os.environ.get("CLIPPER_FACE_MODEL", "") or
+             Path(__file__).resolve().parent.parent / "models" / "blaze_face_short_range.tflite")
+    if not p.is_file():
+        raise FileNotFoundError(f"model deteksi wajah tidak ada: {p} "
+                                "(blaze_face_short_range.tflite dari MediaPipe; atau set CLIPPER_FACE_MODEL)")
+    return str(p)
+
+
+def _mediapipe_detector(video, src_w: int, src_h: int, fps_sample: float, *,
+                        on_sample: Callable[[float], None] | None = None,
+                        lebar: int = LEBAR_DEKODE) -> list[list[FaceBox]]:
+    # on_sample(t) dipanggil tiap frame sampel: progres & pembatalan (boleh raise).
+    # Frame didekode oleh ffmpeg sistem, bukan cv2.VideoCapture: OpenCV bawaan pip tidak
+    # bisa mendekode AV1 (format umum unduhan YouTube) -> 0 frame -> diam-diam blur-pad.
+    # ffmpeg sekalian menurunkan ke fps_sample & LEBAR_DEKODE (cukup tajam untuk petak).
+    import subprocess
+
+    import mediapipe as mp
+    import numpy as np
+    from mediapipe.tasks.python import BaseOptions, vision
+
+    opsi = vision.FaceDetectorOptions(
+        base_options=BaseOptions(model_asset_path=_model_wajah()),
+        running_mode=vision.RunningMode.IMAGE, min_detection_confidence=0.5)
+    tinggi = max(2, round(lebar * src_h / max(src_w, 1) / 2) * 2)
+    cmd = [os.getenv("FFMPEG_BIN", "ffmpeg"), "-v", "error", "-nostdin", "-i", str(video),
+           "-an", "-vf", f"fps={fps_sample},scale={lebar}:{tinggi}",
+           "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
+    ukuran = lebar * tinggi * 3
     out: list[list[FaceBox]] = []
-    idx = 0
-    with mp.solutions.face_detection.FaceDetection(model_selection=1) as det:
-        while True:
-            ok, frame = cap.read()
-            if not ok:
-                break
-            if idx % step == 0:
-                res = det.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-                t = idx / fps
+    proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL)
+    try:
+        with vision.FaceDetector.create_from_options(opsi) as det:
+            def deteksi_satu(rgb):
+                gambar = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+                return [(d.bounding_box.origin_x, d.bounding_box.origin_y, d.bounding_box.width,
+                         d.bounding_box.height, d.categories[0].score if d.categories else 0.0)
+                        for d in det.detect(gambar).detections]
+
+            while True:
+                buf = proc.stdout.read(ukuran)
+                if len(buf) < ukuran:
+                    break
+                t = len(out) / fps_sample
+                if on_sample is not None:
+                    on_sample(t)
+                frame = np.frombuffer(buf, np.uint8).reshape(tinggi, lebar, 3)
                 faces = []
-                for d in res.detections or []:
-                    b = d.location_data.relative_bounding_box
-                    faces.append(FaceBox(t, (b.xmin + b.width / 2) * src_w,
-                                         (b.ymin + b.height / 2) * src_h,
-                                         b.width * src_w, b.height * src_h))
+                for x, y, w, h, _ in deteksi_petak(deteksi_satu, frame):
+                    # piksel frame dekode -> skala ke ukuran sumber
+                    faces.append(FaceBox(t, (x + w / 2) / lebar * src_w, (y + h / 2) / tinggi * src_h,
+                                         w / lebar * src_w, h / tinggi * src_h))
                 out.append(faces)
-            idx += 1
-    cap.release()
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait()
+    if not out:
+        raise RuntimeError(f"tidak ada frame yang bisa didekode dari {video} (ffmpeg rc={proc.returncode})")
     return out
 
 

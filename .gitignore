@@ -7,3 +7,4 @@ work/
 *.wav
 .env
 .DS_Store
+models/*.tflite
