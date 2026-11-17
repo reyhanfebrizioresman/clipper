@@ -59,7 +59,8 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-Pemasangan pertama mengunduh sekitar 1–2 GB paket (faster-whisper, MediaPipe, OpenCV).
+Folder `.venv` jadi sekitar 1,2 GB. Model Whisper diunduh otomatis saat pertama kali
+dipakai (model `small` sekitar 500 MB), hanya untuk video yang tidak punya subtitle.
 
 ### 3. Periksa & unduh model
 
