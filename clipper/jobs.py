@@ -100,7 +100,7 @@ def run_bisa_batal(cmd: list[str], cwd=None) -> None:
 
 
 def transkrip_bisa_batal(video, vtt, *, whisper_model: str = "small",
-                         language: str | None = None):
+                         language: str | None = None, perangkat: str = "cpu"):
     """Seperti pipeline.transcribe, tapi Whisper diperiksa pembatalannya per segmen
     dan melapor posisi tiap ~60 dtk audio (Whisper CPU bisa belasan menit)."""
     from . import pipeline
@@ -108,10 +108,10 @@ def transkrip_bisa_batal(video, vtt, *, whisper_model: str = "small",
 
     if vtt:
         return pipeline.transcribe(video, vtt)
-    import faster_whisper  # berat: hanya bila tak ada subtitle
     cek()
-    model = faster_whisper.WhisperModel(whisper_model, device="cpu", compute_type="int8")
+    model = pipeline.muat_whisper(whisper_model, perangkat, lapor)
     cek()
+    lapor("transkrip", {"perangkat": "GPU" if getattr(model, "clipper_perangkat", "cpu") == "cuda" else "CPU"})
     # deteksi bahasa + prompt tanda baca (lihat pipeline.whisper_segments)
     segmen, info = pipeline.whisper_segments(model, video, language)
     hasil, terakhir = [], 0.0

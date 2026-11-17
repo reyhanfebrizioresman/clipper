@@ -35,8 +35,8 @@ caption berhashtag wajib) untuk campaign clipping (Clippo/TernakKlip).
 
 Alur yang disarankan:
 1. list_campaigns -> get_campaign_brief(slug): baca angle, keywords, larangan, durasi.
-2. fetch_source(url_atau_path): unduh + transkrip (subtitle bawaan, atau Whisper di CPU,
-   bisa beberapa menit). Hasilnya di-cache; panggil ulang itu instan.
+2. fetch_source(url_atau_path): unduh + transkrip (subtitle bawaan, atau Whisper di
+   CPU/GPU server, bisa beberapa menit). Hasilnya di-cache; panggil ulang itu instan.
 3. Baca isi: get_transcript (per halaman) dan/atau list_candidate_windows (potongan yang
    mulai di awal kalimat, plus skor kata kunci; akhir_kalimat=false berarti
    potongan berhenti di tengah kalimat karena batas durasi).
@@ -225,10 +225,12 @@ def get_summary() -> dict[str, Any]:
 @mcp.tool()
 def get_settings() -> dict[str, Any]:
     """Pengaturan engine yang berlaku (sama dengan halaman Pengaturan web UI), skemanya
-    (pilihan & batas tiap setelan), dan setelan yang dikunci env. API key tidak ditampilkan."""
+    (pilihan & batas tiap setelan), dan setelan yang dikunci env. API key tidak ditampilkan.
+    'perangkat' = CPU/RAM/GPU server, rekomendasi setelan untuknya, dan apakah Whisper &
+    encoder sedang memakai GPU. Setelan di 'perangkat.otomatis' mengikuti rekomendasi itu."""
     d = svc().get_settings()
     return {k: d[k] for k in ("nilai", "skema", "skema_gaya", "terkunci_env", "gaya_bawaan",
-                              "platform_efektif", "tersimpan")}
+                              "platform_efektif", "tersimpan", "perangkat")}
 
 
 @mcp.tool()

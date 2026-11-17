@@ -40,6 +40,24 @@ Buka dari laptop lewat SSH tunnel, mis. lewat host perantara:
 ssh -F ~/.ssh/config -L 8780:127.0.0.1:8780 reyhan "ssh -F /home/reyhan/.ssh/config -N -L 8780:127.0.0.1:8780 devodo"
 ```
 
+## Menyesuaikan perangkat
+
+Saat mulai, clipper mendeteksi CPU, RAM, dan GPU NVIDIA mesin tempat ia berjalan
+(`clipper/hardware.py`), lalu mengisi setelan awal yang cocok:
+
+| Mesin | Whisper | Preset encode | Unduhan | Reframe |
+|---|---|---|---|---|
+| ≥6 core, ≥8 GB | small | veryfast | 1080p | 5 fps |
+| 4 core | base | superfast | 1080p | 3 fps |
+| ≤2 core / <4 GB | tiny | ultrafast | 720p | 2 fps |
+| GPU NVIDIA (CUDA) | medium (≥5 GB VRAM) / large-v3 (≥10 GB) | — | — | — |
+
+Bila ada GPU NVIDIA, Whisper berjalan di CUDA dan render memakai NVENC (`Perangkat` di
+Pengaturan: otomatis/CPU/GPU). GPU yang gagal dimuat atau encoder NVENC yang gagal
+otomatis jatuh ke CPU dengan peringatan di panel Job. Rekomendasi ini lapisan paling bawah:
+setelan yang diatur di web UI, `~/.clipper.toml`, atau env selalu menang. Proses berjalan
+di mesin server clipper, bukan di komputer yang membuka web UI / klien MCP.
+
 ## Server MCP (pintu 2)
 
 **Panduan setup lengkap:** [Codex, Claude, SSH reyhan/devodo, dan tes koneksi](docs/mcp-setup.md).

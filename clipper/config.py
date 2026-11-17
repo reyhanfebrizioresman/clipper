@@ -1,5 +1,5 @@
 """Pengaturan engine. Urutan: env var > settings.json (diatur dari web UI) >
-~/.clipper.toml > bawaan. Murni, tanpa impor berat.
+~/.clipper.toml > rekomendasi perangkat (clipper.hardware) > bawaan. Murni, tanpa impor berat.
 
 SKEMA adalah satu sumber kebenaran: validasi di sini, dan form Pengaturan di web UI
 digambar dari skema yang sama (lewat /api/settings).
@@ -43,6 +43,9 @@ class Settings:
     reframe_fps: float = 5.0
     reframe_ambang: float = 0.3
     reframe_kecepatan: float = 0.15
+    # perangkat ("otomatis" = GPU NVIDIA bila terdeteksi, selain itu CPU)
+    perangkat_whisper: str = "otomatis"
+    encoder: str = "otomatis"
     # koleksi
     gaya_kustom: dict = field(default_factory=dict)   # nama -> field gaya (lihat SKEMA_GAYA)
     platform: dict = field(default_factory=dict)      # tiktok -> {maks_durasi, catatan}
@@ -97,6 +100,16 @@ SKEMA: dict[str, dict[str, Any]] = {
     "reframe_kecepatan": {"kelompok": "Reframe", "label": "Kecepatan geser kamera",
                           "tipe": "angka", "min": 0.02, "maks": 1, "langkah": 0.01,
                           "ket": "Lebar sumber per detik; kecil = lebih tenang, besar = lebih cepat mengikuti."},
+    "perangkat_whisper": {"kelompok": "Perangkat", "label": "Whisper berjalan di",
+                          "tipe": "pilihan", "pilihan": ["otomatis", "cpu", "cuda"],
+                          "label_pilihan": {"otomatis": "otomatis", "cpu": "CPU",
+                                            "cuda": "GPU NVIDIA (CUDA)"},
+                          "ket": "Otomatis = GPU NVIDIA bila terdeteksi. Bila GPU gagal dimuat, jatuh ke CPU."},
+    "encoder": {"kelompok": "Perangkat", "label": "Encoder video", "tipe": "pilihan",
+                "pilihan": ["otomatis", "cpu", "nvenc"],
+                "label_pilihan": {"otomatis": "otomatis", "cpu": "CPU (libx264)",
+                                  "nvenc": "GPU NVIDIA (NVENC)"},
+                "ket": "NVENC jauh lebih cepat; file sedikit lebih besar di kualitas yang sama."},
 }
 
 SKEMA_GAYA: dict[str, dict[str, Any]] = {
@@ -282,10 +295,12 @@ def terkunci_env(env=os.environ) -> dict[str, str]:
             if any(env.get(e) for e in nama)}
 
 
-def load_settings(env=os.environ, path="~/.clipper.toml", json_path=None) -> Settings:
+def load_settings(env=os.environ, path="~/.clipper.toml", json_path=None,
+                  rekomendasi: dict | None = None) -> Settings:
+    """rekomendasi = setelan dari hardware.rekomendasi(); lapisan paling bawah."""
     s = Settings()
     dikenal = {f.name for f in fields(Settings)}
-    lapisan: list[dict] = []
+    lapisan: list[dict] = [rekomendasi or {}]
     p = Path(str(path)).expanduser()
     if p.is_file():
         try:

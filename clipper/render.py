@@ -9,10 +9,22 @@ from clipper.transcript import (akhir_kalimat, buang_filler,
 
 FFMPEG = os.getenv("FFMPEG_BIN", "ffmpeg")
 W, H = 1080, 1920
+# preset libx264 -> preset NVENC yang kira-kira setara (p1 tercepat ... p7 terbaik)
+NVENC_PRESET = {"ultrafast": "p1", "superfast": "p2", "veryfast": "p3", "faster": "p4",
+                "fast": "p5", "medium": "p6", "slow": "p7"}
+
+
+def video_args(encoder: str, preset: str, crf: int) -> list[str]:
+    """Argumen encode video. encoder 'nvenc' = GPU NVIDIA; selain itu libx264 (CPU).
+    CQ NVENC dipakai sebagai padanan CRF (skala hampir sama)."""
+    if encoder == "nvenc":
+        return ["-c:v", "h264_nvenc", "-preset", NVENC_PRESET.get(preset, "p4"),
+                "-rc", "vbr", "-cq", str(int(crf)), "-b:v", "0", "-pix_fmt", "yuv420p"]
+    return ["-c:v", "libx264", "-preset", preset, "-crf", str(int(crf)), "-pix_fmt", "yuv420p"]
 
 def cut_cmd(src, start: float, end: float, out_mp4, *,
             filtergraph: str | None = None, crf: int = 23, preset: str = "veryfast",
-            audio_kbps: int = 160) -> list[str]:
+            audio_kbps: int = 160, encoder: str = "cpu") -> list[str]:
     # -ss ditaruh sebelum -i: ffmpeg loncat langsung ke posisi, tidak mendekode dari awal.
     # Default: video sumber ditaruh di sepertiga atas, sisa layar diisi versi blur
     # (satu sumber kebenaran: reframe.blur_pad_graph).
@@ -20,7 +32,7 @@ def cut_cmd(src, start: float, end: float, out_mp4, *,
     fc = filtergraph if filtergraph is not None else blur_pad_graph(W, H)
     return [FFMPEG, "-y", "-ss", f"{start:.3f}", "-i", str(src), "-t", f"{durasi:.3f}",
             "-filter_complex", fc, "-map", "[v]", "-map", "0:a?",
-            "-c:v", "libx264", "-preset", preset, "-crf", str(int(crf)), "-pix_fmt", "yuv420p",
+            *video_args(encoder, preset, crf),
             "-c:a", "aac", "-b:a", f"{int(audio_kbps)}k", "-ar", "44100", "-ac", "2", str(out_mp4)]
 
 def _ts(detik: float) -> str:
@@ -82,8 +94,8 @@ def write_srt(window, out_path, maks_karakter: int = 46, koreksi: dict | None = 
 
 def burn_cmd(in_mp4, srt_name: str, out_mp4, *,
              style: SubtitleStyle = STYLES["lato"], crf: int = 23,
-             preset: str = "veryfast") -> list[str]:
+             preset: str = "veryfast", encoder: str = "cpu") -> list[str]:
     return [FFMPEG, "-y", "-i", str(in_mp4),
             "-vf", f"subtitles={srt_name}:force_style='{style.force_style}'",
-            "-c:v", "libx264", "-preset", preset, "-crf", str(int(crf)), "-pix_fmt", "yuv420p",
+            *video_args(encoder, preset, crf),
             "-c:a", "copy", str(out_mp4)]

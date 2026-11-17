@@ -901,6 +901,19 @@ async function halamanPengaturan() {
   const semuaGaya = () => [...d.gaya_bawaan, ...Object.keys(gayaKustom)];
   const kelompok = {};
   for (const [k, a] of Object.entries(d.skema)) (kelompok[a.kelompok] ||= []).push(k);
+  const pr = d.perangkat || { hardware: {}, rekomendasi: {}, otomatis: [] };
+  const hw = pr.hardware;
+  const kartuPerangkat = `<section class="kartu perangkat"><div class="baris renggang"><h2>Perangkat server</h2>
+      <span class="lencana ${pr.whisper === "cuda" || pr.encoder === "nvenc" ? "ok" : ""}">${pr.whisper === "cuda" || pr.encoder === "nvenc" ? "GPU dipakai" : "CPU saja"}</span></div>
+    <div class="spesifikasi">
+      <div><small>CPU</small><strong>${esc(hw.cpu ?? "?")} core</strong></div>
+      <div><small>RAM</small><strong>${hw.ram_gb != null ? `${esc(hw.ram_gb)} GB` : "tidak diketahui"}</strong></div>
+      <div><small>GPU</small><strong>${hw.gpu ? `${esc(hw.gpu)}${hw.vram_gb ? ` · ${esc(hw.vram_gb)} GB` : ""}` : "tidak ada GPU NVIDIA"}</strong></div>
+      <div><small>Whisper</small><strong>${pr.whisper === "cuda" ? "GPU (CUDA)" : "CPU"}</strong></div>
+      <div><small>Encoder video</small><strong>${pr.encoder === "nvenc" ? "GPU (NVENC)" : "CPU (libx264)"}</strong></div>
+    </div>
+    <p class="redup kecil">Dideteksi saat server mulai. Setelan bertanda <span class="lencana ok">sesuai perangkat</span> diisi otomatis dari spesifikasi ini${Object.keys(pr.rekomendasi).length ? ` (${Object.entries(pr.rekomendasi).map(([k, v]) => `${esc(d.skema[k]?.label || k)}: ${esc(v)}`).join(" · ")})` : ""}. Mengubahnya di bawah selalu menang.</p>
+  </section>`;
 
   isi.innerHTML = `
   <div class="halaman-kepala"><div><span class="eyebrow">SESUAI CARA KERJAMU</span><h1>Pengaturan</h1>
@@ -908,12 +921,14 @@ async function halamanPengaturan() {
     <button type="button" class="utama" id="simpan-set">${ikon("check")} Simpan perubahan</button></div>
   <datalist id="daftar-font">${fonts.map((f) => `<option value="${esc(f)}">`).join("")}</datalist>
   <div class="tumpuk" id="form-set">
+    ${kartuPerangkat}
     ${Object.entries(kelompok).map(([nama, kunci]) => `
       <section class="kartu"><h2>${esc(nama)}</h2><div class="grid-form">
         ${kunci.map((k) => {
           const a = d.skema[k], env = d.terkunci_env[k], diubah = d.tersimpan.includes(k);
+          const otomatis = pr.otomatis.includes(k), adaRek = k in pr.rekomendasi;
           return `<div class="medan">${inputDariSkema(k, a, d.nilai[k], { terkunci: !!env, gaya: semuaGaya() })}
-            <div class="redup kecil">${env ? `<span class="lencana jalan">dikunci env ${esc(env)}</span> ` : ""}${diubah && !env && a.tipe !== "rahasia" ? `<a href="#" data-reset="${esc(k)}">kembalikan bawaan</a> · ` : ""}${esc(a.ket || "")}</div></div>`;
+            <div class="redup kecil">${env ? `<span class="lencana jalan">dikunci env ${esc(env)}</span> ` : ""}${otomatis && !env ? `<span class="lencana ok">sesuai perangkat</span> ` : ""}${diubah && !env && a.tipe !== "rahasia" ? `<a href="#" data-reset="${esc(k)}">${adaRek ? `kembalikan ke rekomendasi (${esc(pr.rekomendasi[k])})` : "kembalikan bawaan"}</a> · ` : ""}${esc(a.ket || "")}</div></div>`;
         }).join("")}
       </div></section>`).join("")}
     <section class="kartu"><div class="baris renggang"><h2>Gaya subtitle</h2>

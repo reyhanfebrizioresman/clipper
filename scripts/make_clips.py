@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from clipper import campaign as camp
 from clipper import pipeline, source
+from clipper import hardware
 from clipper.config import load_settings
 from clipper.styles import STYLES, semua_gaya
 from clipper.pipeline import run_subprocess as jalankan
@@ -55,7 +56,10 @@ def main() -> None:
     args = ap.parse_args()
 
     # setelan yang sama dengan web UI & MCP: <keluaran>/settings.json
-    settings = load_settings(json_path=Path(args.keluaran) / "settings.json")
+    hw = hardware.terdeteksi()
+    settings = load_settings(json_path=Path(args.keluaran) / "settings.json",
+                             rekomendasi=hardware.rekomendasi(hw))
+    settings = replace(settings, encoder=hardware.encoder_efektif(settings.encoder, hw))
     if args.ai:
         settings = replace(settings, ai_provider=args.ai)
     c = camp.load(args.brief)
@@ -66,7 +70,8 @@ def main() -> None:
     video, vtt = ambil_sumber(args.sumber, kerja / "sumber", settings)
     print(f"[transkrip] {'subtitle bawaan: ' + vtt.name if vtt else 'tidak ada subtitle — Whisper (butuh beberapa menit)'}")
     segmen = pipeline.transcribe(video, vtt, whisper_model=settings.whisper_model,
-                                 language=settings.bahasa)
+                                 language=settings.bahasa,
+                                 perangkat=hardware.whisper_efektif(settings.perangkat_whisper, hw))
     if not segmen:
         raise SystemExit("transkrip kosong — tidak bisa memilih momen")
     print(f"[transkrip] {len(segmen)} segmen, {segmen[-1].end/60:.1f} menit")

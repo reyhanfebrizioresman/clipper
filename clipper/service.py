@@ -26,6 +26,7 @@ from typing import Any, Callable, Iterable
 
 from . import campaign as camp
 from . import export, jobs, pipeline, select, source
+from . import hardware as perangkat
 from .brain.base import Proposal
 from .config import (GAYA_BAWAAN_BARU, SKEMA, SKEMA_GAYA, SKEMA_PLATFORM, Settings,
                      SettingsError, baca_json, load_settings, simpan_json, terkunci_env)
@@ -87,7 +88,8 @@ class ClipperService:
                  settings: Settings | None = None, *, run: Run = jobs.run_bisa_batal,
                  transcriber: Callable[..., list[Segment]] = jobs.transkrip_bisa_batal,
                  face_detector: Callable | None = None,
-                 settings_path: Path | None = None, toml_path: Path | str = "~/.clipper.toml"):
+                 settings_path: Path | None = None, toml_path: Path | str = "~/.clipper.toml",
+                 hardware: "perangkat.Hardware | None" = None):
         self.campaigns_dir = Path(campaigns_dir).expanduser()
         self.work_dir = Path(work_dir).expanduser()
         # settings tetap (tes) atau dinamis: settings.json di work dir, diatur dari web UI,
@@ -100,9 +102,14 @@ class ClipperService:
         self.run = run
         self.transcriber = transcriber
         self.face_detector = face_detector  # None = mediapipe (reframe._mediapipe_detector)
+        self._hardware = hardware           # None = deteksi mesin ini (sekali per proses)
         # fetch & render makan CPU penuh dan menomori file: satu per satu
         self._kunci = threading.Lock()
         self._kunci_manifest = threading.RLock()   # edit cepat (hook/status) vs. manifest
+
+    @property
+    def hardware(self) -> "perangkat.Hardware":
+        return self._hardware or perangkat.terdeteksi()
 
     @property
     def settings(self) -> Settings:
@@ -116,7 +123,9 @@ class ClipperService:
                 return None
         kunci = (mtime(self.settings_path), mtime(self.toml_path))
         if self._settings_cache is None or kunci != self._settings_kunci:
-            self._settings_cache = load_settings(path=self.toml_path, json_path=self.settings_path)
+            self._settings_cache = load_settings(
+                path=self.toml_path, json_path=self.settings_path,
+                rekomendasi=perangkat.rekomendasi(self.hardware))
             self._settings_kunci = kunci
         return self._settings_cache
 
@@ -135,7 +144,13 @@ class ClipperService:
         nilai["gemini_api_key"] = {"ada": bool(key), "akhir": key[-4:] if key and len(key) >= 8 else ""}
         tersimpan = baca_json(self.settings_path)
         tersimpan.pop("gemini_api_key", None)
+        info_perangkat = perangkat.ringkas(self.hardware, s)
+        # setelan yang nilainya datang dari rekomendasi perangkat (bukan diatur pengguna)
+        info_perangkat["otomatis"] = sorted(
+            k for k, v in info_perangkat["rekomendasi"].items()
+            if k not in tersimpan and nilai.get(k) == v)
         return {"nilai": nilai, "tersimpan": sorted(tersimpan), "terkunci_env": terkunci_env(),
+                "perangkat": info_perangkat,
                 "skema": SKEMA, "skema_gaya": SKEMA_GAYA, "gaya_baru": GAYA_BAWAAN_BARU,
                 "skema_platform": SKEMA_PLATFORM, "gaya_bawaan": sorted(STYLES),
                 "platform_efektif": export.aturan_efektif(s.platform),
@@ -304,6 +319,7 @@ class ClipperService:
         st_ = self.settings
         whisper_model = whisper_model or st_.whisper_model
         language = language or st_.bahasa
+        di = perangkat.whisper_efektif(st_.perangkat_whisper, self.hardware)
         source_id, lokal = self._id_untuk(target)
         sdir = self._source_dir(source_id)
         meta_p = sdir / "meta.json"
@@ -349,12 +365,13 @@ class ClipperService:
                 vtt = None
             asal = "subtitle" if vtt else "whisper"
             lapor("transkrip", {"asal": asal, "subtitle": vtt.name if vtt else None})
-            segmen = self.transcriber(video, vtt, whisper_model=whisper_model, language=language) \
-                if not vtt else self.transcriber(video, vtt)
+            segmen = self.transcriber(video, vtt, whisper_model=whisper_model, language=language,
+                                      perangkat=di) if not vtt else self.transcriber(video, vtt)
             if not segmen and vtt:
                 lapor("peringatan", {"pesan": "subtitle kosong; pakai Whisper"})
                 asal = "whisper"
-                segmen = self.transcriber(video, None, whisper_model=whisper_model, language=language)
+                segmen = self.transcriber(video, None, whisper_model=whisper_model, language=language,
+                                          perangkat=di)
             if not segmen:
                 raise ClipperError("transkrip kosong — tidak ada ucapan yang bisa dipotong")
 
@@ -483,6 +500,7 @@ class ClipperService:
         if gaya not in semua:
             raise ClipperError(f"gaya subtitle tidak dikenal: {gaya!r}. Pilihan: {sorted(semua)}")
         s = dasar if reframe is None else replace(dasar, reframe=reframe)
+        s = replace(s, encoder=perangkat.encoder_efektif(s.encoder, self.hardware))
 
         with self._giliran(on_progress or (lambda t, i: None)):
             klip_dir = self._clip_dir(slug, source_id)

@@ -391,3 +391,9 @@ input[type=color] { padding: 3px; height: 40px; width: 100%; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* perangkat server (Pengaturan) */
+.perangkat .spesifikasi { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 12px 0; }
+.perangkat .spesifikasi > div { background: var(--lembut); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+.perangkat .spesifikasi small { display: block; color: var(--redup); font-size: 11px; margin-bottom: 2px; }
+.perangkat .spesifikasi strong { display: block; overflow-wrap: anywhere; }

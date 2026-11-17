@@ -137,12 +137,32 @@ def whisper_segments(model, video: Path, language: str | None = None):
                             initial_prompt=PROMPT_TANDA_BACA.get(language or ""))
 
 
+def muat_whisper(nama: str, perangkat: str = "cpu", on_progress: Progress | None = None):
+    """Muat model Whisper. perangkat 'cuda' dicoba dulu (float16) dan diuji dengan satu
+    deteksi bahasa pada audio hening: cuBLAS/cuDNN yang hilang baru ketahuan saat model
+    benar-benar jalan. Gagal apa pun -> CPU int8, dengan peringatan."""
+    import faster_whisper  # lazy: berat, hanya dipakai saat tidak ada subtitle
+    if perangkat == "cuda":
+        try:
+            model = faster_whisper.WhisperModel(nama, device="cuda", compute_type="float16")
+            if hasattr(model, "detect_language"):
+                import numpy as np
+                model.detect_language(np.zeros(16000, dtype=np.float32))
+            model.clipper_perangkat = "cuda"
+            return model
+        except Exception as e:
+            if on_progress:
+                on_progress("peringatan", {"pesan": f"Whisper GPU gagal ({str(e)[:120]}); pakai CPU"})
+    model = faster_whisper.WhisperModel(nama, device="cpu", compute_type="int8")
+    model.clipper_perangkat = "cpu"
+    return model
+
+
 def transcribe(video: Path, vtt: Path | None, *, whisper_model: str = "small",
-               language: str | None = None) -> list[Segment]:
+               language: str | None = None, perangkat: str = "cpu") -> list[Segment]:
     if vtt:
         return transcript.parse(vtt.read_text(encoding="utf-8"))
-    import faster_whisper  # lazy: berat, hanya dipakai saat tidak ada subtitle
-    model = faster_whisper.WhisperModel(whisper_model, device="cpu", compute_type="int8")
+    model = muat_whisper(whisper_model, perangkat)
     # language=None → auto-deteksi bahasa (jangan paksa 'id' ke audio non-Indonesia)
     segmen, _ = whisper_segments(model, video, language)
     return [Segment(s.start, s.end, s.text.strip()) for s in segmen]
@@ -172,6 +192,19 @@ def process(c: Campaign, video: Path, segmen: list[Segment], klip_dir: Path, *,
         terbaik = keyword_chooser(segmen, c, c.durasi_min_s, batas_atas, jumlah, lewati)
     lapor("pilih", dipilih=len(terbaik), dari=lewati + 1, sampai=lewati + len(terbaik))
 
+    # encoder: 'nvenc' (GPU) bila diminta; gagal sekali -> CPU untuk sisa job ini
+    enc = ["nvenc" if s.encoder == "nvenc" else "cpu"]
+
+    def encode(buat: Callable[[str], list[str]], cwd=None) -> None:
+        if enc[0] == "nvenc":
+            try:
+                run(buat("nvenc"), cwd=cwd)
+                return
+            except RuntimeError as e:
+                lapor("peringatan", pesan=f"encoder GPU gagal ({str(e)[:120]}); pakai CPU")
+                enc[0] = "cpu"
+        run(buat("cpu"), cwd=cwd)
+
     hasil: list[ClipResult] = []
     for n, w in enumerate(terbaik, lewati + 1):
         nama = f"{c.slug}-{n:02d}"
@@ -180,13 +213,15 @@ def process(c: Campaign, video: Path, segmen: list[Segment], klip_dir: Path, *,
         final = klip_dir / f"{nama}.mp4"
         lapor("render", nama=nama, rank=n, durasi=round(w.end - w.start, 1))
         fg = reframe_planner(video, w) if reframe_planner else None
-        run(render.cut_cmd(video, w.start, w.end, mentah, filtergraph=fg, crf=s.crf,
-                           preset=s.preset, audio_kbps=s.audio_kbps))
+        encode(lambda enc: render.cut_cmd(video, w.start, w.end, mentah, filtergraph=fg,
+                                          crf=s.crf, preset=s.preset,
+                                          audio_kbps=s.audio_kbps, encoder=enc))
         render.write_srt(w, srt, maks_karakter=s.karakter_per_baris, koreksi=c.koreksi)
         # dijalankan dari folder klip: filter subtitles ffmpeg memakai nama file
         # relatif (path absolut butuh escaping yang rapuh)
-        run(render.burn_cmd(mentah.resolve(), srt.name, final.resolve(), style=style,
-                            crf=s.crf, preset=s.preset), cwd=klip_dir)
+        encode(lambda enc: render.burn_cmd(mentah.resolve(), srt.name, final.resolve(),
+                                           style=style, crf=s.crf, preset=s.preset,
+                                           encoder=enc), cwd=klip_dir)
         mentah.unlink(missing_ok=True)
 
         hook = (w.hook_title or "").strip() or select.hook(w, koreksi=c.koreksi)
