@@ -3,7 +3,8 @@
 Mesin pemotong klip untuk campaign clipping (Clippo/TernakKlip).
 Dari satu video panjang jadi beberapa klip 9:16 siap unggah + caption berisi hashtag wajib.
 
-**Instalasi (Linux, macOS, Windows, GPU):** [docs/instalasi.md](docs/instalasi.md).
+**Instalasi (Linux, macOS, Windows, GPU):** [docs/instalasi.md](docs/instalasi.md)
+· **Installation guide in English:** [docs/installation.md](docs/installation.md).
 Setelah memasang, periksa dengan `.venv/bin/python scripts/cek_instalasi.py --unduh-model`.
 
 ```

@@ -1,5 +1,7 @@
 # Instalasi Clipper
 
+*Bahasa Indonesia · [English](installation.md)*
+
 Panduan memasang Clipper di komputer atau server sendiri, dari nol sampai web UI
 **Clipper Studio** terbuka di browser.
 
