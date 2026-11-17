@@ -14,6 +14,32 @@ Alur: unduh (yt-dlp) → transkrip (subtitle bawaan, atau Whisper kalau tidak ad
 **Unggah tetap manual.** TikTok/Instagram melarang unggah otomatis; script berhenti
 di file siap kirim. Aturan campaign (durasi, hashtag, larangan) ada di `campaigns/*.json`.
 
+## Clipper Studio — web UI (pintu 1)
+
+```
+.venv/bin/python scripts/web.py            # http://127.0.0.1:8780
+```
+
+- **Sumber**: unduh dari URL atau unggah video; progres & batal di panel Job.
+- **Studio**: putar video sumber, pratinjau kandidat (mulai di awal kalimat; yang
+  berhenti di tengah kalimat diberi tanda), cari di transkrip, tandai awal/akhir sendiri,
+  geser ±1 dtk, tulis hook, lalu render. Ada juga "Klip otomatis" (kata kunci / Gemini).
+- **Pustaka klip**: putar, unduh, salin caption per platform (TikTok satu baris).
+- **Campaign**: ubah brief; field yang tidak ada di form tetap dipertahankan.
+
+Durasi maks bawaan 60 dtk (batas umum TikTok/Reels/Shorts), bisa dinaikkan sampai batas
+campaign. Saat render, waktu ditempel ke kalimat utuh, tapi tidak akan memangkas lebih
+dari 40% dari durasi yang dipilih (hasil = yang dipratinjau).
+
+Tanpa login, jadi hanya mendengarkan 127.0.0.1 (host lain ditolak kecuali
+`--izinkan-tanpa-auth`). Header `Host` harus loopback dan request yang mengubah data wajib
+membawa `X-Clipper: 1`, supaya situs lain tidak bisa memicu aksi lewat browsermu.
+Buka dari laptop lewat SSH tunnel, mis. lewat host perantara:
+
+```
+ssh -L 8780:127.0.0.1:8780 reyhan "ssh -N -L 8780:127.0.0.1:8780 devodo"
+```
+
 ## Server MCP (pintu 2)
 
 Klien AI kamu sendiri (Claude Code / Claude Desktop / Codex) yang memilih momen dan menulis
