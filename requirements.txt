@@ -7,3 +7,4 @@ google-genai>=1.0
 mediapipe>=0.10
 opencv-python>=4.9
 mcp>=1.20,<2   # server MCP (scripts/mcp_server.py)
+fastapi>=0.115   # web UI (scripts/web.py)

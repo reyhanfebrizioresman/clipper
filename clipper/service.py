@@ -324,6 +324,12 @@ class ClipperService:
                           ("source_id", "asal", "durasi_s", "jumlah_segmen", "transkrip_dari")})
         return hasil
 
+    def get_source(self, source_id: str) -> dict:
+        """Meta satu sumber, termasuk path video di server."""
+        m = self._meta(source_id)
+        return {k: m.get(k) for k in ("source_id", "asal", "video", "durasi_s",
+                                      "jumlah_segmen", "transkrip_dari")}
+
     def get_transcript(self, source_id: str, *, mulai_s: float = 0.0,
                        sampai_s: float | None = None, offset: int = 0,
                        limit: int = 400) -> dict:

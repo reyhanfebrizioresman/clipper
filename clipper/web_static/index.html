@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clipper Studio</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="atas">
+  <a class="merek" href="#/">✂ Clipper Studio</a>
+  <nav>
+    <a href="#/" data-nav="beranda">Sumber</a>
+    <a href="#/klip" data-nav="klip">Pustaka klip</a>
+    <a href="#/campaign" data-nav="campaign">Campaign</a>
+  </nav>
+  <button id="tombol-job" class="tombol-job" type="button" aria-expanded="false">
+    <span id="titik-job" class="titik"></span><span id="label-job">Job</span>
+  </button>
+</header>
+
+<aside id="panel-job" class="panel-job" hidden>
+  <div class="panel-kepala"><strong>Job</strong>
+    <button type="button" class="ikon" id="tutup-job" aria-label="Tutup">✕</button></div>
+  <div id="daftar-job"></div>
+</aside>
+
+<main id="isi"></main>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
