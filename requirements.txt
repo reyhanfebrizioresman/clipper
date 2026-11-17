@@ -8,3 +8,4 @@ mediapipe>=0.10
 opencv-python>=4.9
 mcp>=1.20,<2   # server MCP (scripts/mcp_server.py)
 fastapi>=0.115   # web UI (scripts/web.py)
+mlx-whisper>=0.4; sys_platform == "darwin" and platform_machine == "arm64"   # Whisper di GPU Apple Silicon

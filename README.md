@@ -50,11 +50,21 @@ Saat mulai, clipper mendeteksi CPU, RAM, dan GPU NVIDIA mesin tempat ia berjalan
 | ≥6 core, ≥8 GB | small | veryfast | 1080p | 5 fps |
 | 4 core | base | superfast | 1080p | 3 fps |
 | ≤2 core / <4 GB | tiny | ultrafast | 720p | 2 fps |
-| GPU NVIDIA (CUDA) | medium (≥5 GB VRAM) / large-v3 (≥10 GB) | — | — | — |
+| GPU NVIDIA / AMD-ROCm | medium (≥5 GB VRAM) / large-v3 (≥10 GB) | — | — | — |
+| Apple Silicon | small / medium (≥16 GB) / large-v3 (≥32 GB) | — | — | — |
 
-Bila ada GPU NVIDIA, Whisper berjalan di CUDA dan render memakai NVENC (`Perangkat` di
-Pengaturan: otomatis/CPU/GPU). GPU yang gagal dimuat atau encoder NVENC yang gagal
-otomatis jatuh ke CPU dengan peringatan di panel Job. Rekomendasi ini lapisan paling bawah:
+GPU yang dipakai (`Perangkat` di Pengaturan, bawaan otomatis):
+
+| GPU | Encoder video | Whisper |
+|---|---|---|
+| NVIDIA | NVENC | CUDA (faster-whisper) |
+| Apple Silicon (Mac M1+) | VideoToolbox | MLX (`mlx-whisper`, terpasang otomatis lewat requirements di Mac arm64) |
+| AMD di Windows | AMF | CPU |
+| AMD / Intel di Linux | VAAPI (`/dev/dri/renderD*`, perlu `mesa-va-drivers` / `intel-media-va-driver`) | CPU, atau GPU AMD bila CTranslate2 build ROCm terpasang |
+
+Encoder GPU hanya dipilih bila lolos uji encode sungguhan saat server mulai (argumen sama
+dengan render), jadi build ffmpeg/driver yang tidak mendukung otomatis memakai CPU. GPU yang
+gagal saat dipakai juga jatuh ke CPU dengan peringatan di panel Job. Rekomendasi ini lapisan paling bawah:
 setelan yang diatur di web UI, `~/.clipper.toml`, atau env selalu menang. Proses berjalan
 di mesin server clipper, bukan di komputer yang membuka web UI / klien MCP.
 

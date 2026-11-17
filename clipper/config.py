@@ -43,7 +43,7 @@ class Settings:
     reframe_fps: float = 5.0
     reframe_ambang: float = 0.3
     reframe_kecepatan: float = 0.15
-    # perangkat ("otomatis" = GPU NVIDIA bila terdeteksi, selain itu CPU)
+    # perangkat ("otomatis" = GPU yang terdeteksi & lolos uji, selain itu CPU)
     perangkat_whisper: str = "otomatis"
     encoder: str = "otomatis"
     # koleksi
@@ -101,15 +101,21 @@ SKEMA: dict[str, dict[str, Any]] = {
                           "tipe": "angka", "min": 0.02, "maks": 1, "langkah": 0.01,
                           "ket": "Lebar sumber per detik; kecil = lebih tenang, besar = lebih cepat mengikuti."},
     "perangkat_whisper": {"kelompok": "Perangkat", "label": "Whisper berjalan di",
-                          "tipe": "pilihan", "pilihan": ["otomatis", "cpu", "cuda"],
+                          "tipe": "pilihan", "pilihan": ["otomatis", "cpu", "cuda", "mlx"],
                           "label_pilihan": {"otomatis": "otomatis", "cpu": "CPU",
-                                            "cuda": "GPU NVIDIA (CUDA)"},
-                          "ket": "Otomatis = GPU NVIDIA bila terdeteksi. Bila GPU gagal dimuat, jatuh ke CPU."},
+                                            "cuda": "GPU NVIDIA (CUDA) / AMD (ROCm)",
+                                            "mlx": "GPU Apple (MLX)"},
+                          "ket": "Otomatis = GPU bila terdeteksi. AMD butuh CTranslate2 build ROCm; "
+                                 "Apple butuh mlx-whisper. Bila GPU gagal, jatuh ke CPU."},
     "encoder": {"kelompok": "Perangkat", "label": "Encoder video", "tipe": "pilihan",
-                "pilihan": ["otomatis", "cpu", "nvenc"],
+                "pilihan": ["otomatis", "cpu", "nvenc", "videotoolbox", "amf", "vaapi"],
                 "label_pilihan": {"otomatis": "otomatis", "cpu": "CPU (libx264)",
-                                  "nvenc": "GPU NVIDIA (NVENC)"},
-                "ket": "NVENC jauh lebih cepat; file sedikit lebih besar di kualitas yang sama."},
+                                  "nvenc": "GPU NVIDIA (NVENC)",
+                                  "videotoolbox": "GPU Apple (VideoToolbox)",
+                                  "amf": "GPU AMD (AMF, Windows)",
+                                  "vaapi": "GPU AMD/Intel (VAAPI, Linux)"},
+                "ket": "Encoder GPU jauh lebih cepat; file sedikit lebih besar di kualitas yang sama. "
+                       "Otomatis memilih yang lolos uji encode saat server mulai."},
 }
 
 SKEMA_GAYA: dict[str, dict[str, Any]] = {

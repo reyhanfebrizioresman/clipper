@@ -111,7 +111,8 @@ def transkrip_bisa_batal(video, vtt, *, whisper_model: str = "small",
     cek()
     model = pipeline.muat_whisper(whisper_model, perangkat, lapor)
     cek()
-    lapor("transkrip", {"perangkat": "GPU" if getattr(model, "clipper_perangkat", "cpu") == "cuda" else "CPU"})
+    lapor("transkrip", {"perangkat": {"cuda": "GPU", "mlx": "GPU Apple"}.get(
+        getattr(model, "clipper_perangkat", "cpu"), "CPU")})
     # deteksi bahasa + prompt tanda baca (lihat pipeline.whisper_segments)
     segmen, info = pipeline.whisper_segments(model, video, language)
     hasil, terakhir = [], 0.0

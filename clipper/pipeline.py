@@ -137,11 +137,55 @@ def whisper_segments(model, video: Path, language: str | None = None):
                             initial_prompt=PROMPT_TANDA_BACA.get(language or ""))
 
 
+# model faster-whisper -> repo model MLX (Apple Silicon)
+MLX_REPO = {"tiny": "mlx-community/whisper-tiny-mlx", "base": "mlx-community/whisper-base-mlx",
+            "small": "mlx-community/whisper-small-mlx",
+            "medium": "mlx-community/whisper-medium-mlx",
+            "large-v3": "mlx-community/whisper-large-v3-mlx"}
+
+
+class WhisperMlx:
+    """Whisper di GPU Apple lewat mlx-whisper, berantarmuka seperti faster_whisper.WhisperModel
+    (transcribe -> (segmen, info)). Gagal saat transkripsi (model tak terunduh, MLX error)
+    -> faster-whisper CPU, dengan peringatan."""
+    clipper_perangkat = "mlx"
+
+    def __init__(self, nama: str, on_progress: Progress | None = None):
+        import mlx_whisper  # noqa: F401  (gagal impor = tidak tersedia -> CPU)
+        self.nama, self.lapor = nama, on_progress
+
+    def transcribe(self, audio, language=None, vad_filter=True, initial_prompt=None):
+        from types import SimpleNamespace
+        try:
+            import mlx_whisper
+            r = mlx_whisper.transcribe(audio, path_or_hf_repo=MLX_REPO.get(self.nama, self.nama),
+                                       language=language, initial_prompt=initial_prompt,
+                                       verbose=None)
+        except Exception as e:
+            if self.lapor:
+                self.lapor("peringatan", {"pesan": f"Whisper GPU Apple gagal ({str(e)[:120]}); pakai CPU"})
+            import faster_whisper
+            cpu = faster_whisper.WhisperModel(self.nama, device="cpu", compute_type="int8")
+            return cpu.transcribe(audio, language=language, vad_filter=vad_filter,
+                                  initial_prompt=initial_prompt)
+        segmen = [SimpleNamespace(start=float(s["start"]), end=float(s["end"]), text=s["text"])
+                  for s in r.get("segments", [])]
+        durasi = len(audio) / 16000 if hasattr(audio, "__len__") and not isinstance(audio, str) \
+            else (segmen[-1].end if segmen else 0.0)
+        return iter(segmen), SimpleNamespace(duration=durasi, language=r.get("language"))
+
+
 def muat_whisper(nama: str, perangkat: str = "cpu", on_progress: Progress | None = None):
-    """Muat model Whisper. perangkat 'cuda' dicoba dulu (float16) dan diuji dengan satu
-    deteksi bahasa pada audio hening: cuBLAS/cuDNN yang hilang baru ketahuan saat model
-    benar-benar jalan. Gagal apa pun -> CPU int8, dengan peringatan."""
+    """Muat model Whisper. 'cuda' (NVIDIA CUDA / AMD ROCm) dicoba dulu (float16) dan diuji
+    dengan satu deteksi bahasa pada audio hening: library GPU yang hilang baru ketahuan saat
+    model benar-benar jalan. 'mlx' = GPU Apple. Gagal apa pun -> CPU int8, dengan peringatan."""
     import faster_whisper  # lazy: berat, hanya dipakai saat tidak ada subtitle
+    if perangkat == "mlx":
+        try:
+            return WhisperMlx(nama, on_progress)
+        except Exception as e:
+            if on_progress:
+                on_progress("peringatan", {"pesan": f"mlx-whisper tidak tersedia ({str(e)[:120]}); pakai CPU"})
     if perangkat == "cuda":
         try:
             model = faster_whisper.WhisperModel(nama, device="cuda", compute_type="float16")
@@ -192,13 +236,14 @@ def process(c: Campaign, video: Path, segmen: list[Segment], klip_dir: Path, *,
         terbaik = keyword_chooser(segmen, c, c.durasi_min_s, batas_atas, jumlah, lewati)
     lapor("pilih", dipilih=len(terbaik), dari=lewati + 1, sampai=lewati + len(terbaik))
 
-    # encoder: 'nvenc' (GPU) bila diminta; gagal sekali -> CPU untuk sisa job ini
-    enc = ["nvenc" if s.encoder == "nvenc" else "cpu"]
+    # encoder GPU (nvenc/videotoolbox/amf/vaapi) bila diminta; gagal sekali -> CPU untuk
+    # sisa job ini. 'otomatis' yang lolos sampai sini (tanpa resolusi perangkat) = CPU.
+    enc = ["cpu" if s.encoder in ("cpu", "otomatis") else s.encoder]
 
     def encode(buat: Callable[[str], list[str]], cwd=None) -> None:
-        if enc[0] == "nvenc":
+        if enc[0] != "cpu":
             try:
-                run(buat("nvenc"), cwd=cwd)
+                run(buat(enc[0]), cwd=cwd)
                 return
             except RuntimeError as e:
                 lapor("peringatan", pesan=f"encoder GPU gagal ({str(e)[:120]}); pakai CPU")

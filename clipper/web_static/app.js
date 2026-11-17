@@ -903,15 +903,19 @@ async function halamanPengaturan() {
   for (const [k, a] of Object.entries(d.skema)) (kelompok[a.kelompok] ||= []).push(k);
   const pr = d.perangkat || { hardware: {}, rekomendasi: {}, otomatis: [] };
   const hw = pr.hardware;
+  const NAMA_WHISPER = { cuda: hw.gpu_vendor === "amd" ? "GPU AMD (ROCm)" : "GPU (CUDA)", mlx: "GPU Apple (MLX)", cpu: "CPU" };
+  const NAMA_ENCODER = { nvenc: "GPU NVIDIA (NVENC)", videotoolbox: "GPU Apple (VideoToolbox)", amf: "GPU AMD (AMF)", vaapi: "GPU (VAAPI)", cpu: "CPU (libx264)" };
+  const pakaiGpu = pr.whisper !== "cpu" || pr.encoder !== "cpu";
   const kartuPerangkat = `<section class="kartu perangkat"><div class="baris renggang"><h2>Perangkat server</h2>
-      <span class="lencana ${pr.whisper === "cuda" || pr.encoder === "nvenc" ? "ok" : ""}">${pr.whisper === "cuda" || pr.encoder === "nvenc" ? "GPU dipakai" : "CPU saja"}</span></div>
+      <span class="lencana ${pakaiGpu ? "ok" : ""}">${pakaiGpu ? "GPU dipakai" : "CPU saja"}</span></div>
     <div class="spesifikasi">
       <div><small>CPU</small><strong>${esc(hw.cpu ?? "?")} core</strong></div>
       <div><small>RAM</small><strong>${hw.ram_gb != null ? `${esc(hw.ram_gb)} GB` : "tidak diketahui"}</strong></div>
-      <div><small>GPU</small><strong>${hw.gpu ? `${esc(hw.gpu)}${hw.vram_gb ? ` · ${esc(hw.vram_gb)} GB` : ""}` : "tidak ada GPU NVIDIA"}</strong></div>
-      <div><small>Whisper</small><strong>${pr.whisper === "cuda" ? "GPU (CUDA)" : "CPU"}</strong></div>
-      <div><small>Encoder video</small><strong>${pr.encoder === "nvenc" ? "GPU (NVENC)" : "CPU (libx264)"}</strong></div>
+      <div><small>GPU</small><strong>${hw.gpu ? `${esc(hw.gpu)}${hw.vram_gb ? ` · ${esc(hw.vram_gb)} GB` : ""}` : "tidak terdeteksi"}</strong></div>
+      <div><small>Whisper</small><strong>${esc(NAMA_WHISPER[pr.whisper] || pr.whisper)}</strong></div>
+      <div><small>Encoder video</small><strong>${esc(NAMA_ENCODER[pr.encoder] || pr.encoder)}</strong></div>
     </div>
+    ${hw.gpu && !(hw.encoders || []).length ? `<p class="redup kecil">GPU terlihat, tapi tidak ada encoder GPU yang lolos uji encode di ffmpeg server ini (build ffmpeg/driver belum mendukung), jadi render memakai CPU.</p>` : ""}
     <p class="redup kecil">Dideteksi saat server mulai. Setelan bertanda <span class="lencana ok">sesuai perangkat</span> diisi otomatis dari spesifikasi ini${Object.keys(pr.rekomendasi).length ? ` (${Object.entries(pr.rekomendasi).map(([k, v]) => `${esc(d.skema[k]?.label || k)}: ${esc(v)}`).join(" · ")})` : ""}. Mengubahnya di bawah selalu menang.</p>
   </section>`;
 
