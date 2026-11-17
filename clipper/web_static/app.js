@@ -104,6 +104,7 @@ const rute = [
   [/^#\/studio\/([uf]-[0-9a-f]{12})$/, halamanStudio, "beranda"],
   [/^#\/klip$/, halamanKlip, "klip"],
   [/^#\/campaign(?:\/([a-z0-9-]+|baru))?$/, halamanCampaign, "campaign"],
+  [/^#\/pengaturan$/, halamanPengaturan, "pengaturan"],
 ];
 let bersihkan = null;
 async function jalankanRute() {
@@ -290,8 +291,9 @@ async function halamanStudio(sid) {
     const maksC = c?.durasi_s?.[1] ?? 60;
     const m = $("#maks");
     m.max = String(maksC);
-    m.value = String(Math.min(maksC, 60));
-    $("#info-maks").textContent = c ? `Campaign mengizinkan ${c.durasi_s[0]}–${maksC} dtk. Bawaan 60 dtk mengikuti batas umum TikTok/Reels/Shorts; naikkan bila perlu.` : "";
+    const bawaan = INFO.maks_durasi_bawaan || 60;
+    m.value = String(Math.min(maksC, bawaan));
+    $("#info-maks").textContent = c ? `Campaign mengizinkan ${c.durasi_s[0]}–${maksC} dtk. Bawaan ${bawaan} dtk (atur di Pengaturan); naikkan bila perlu.` : "";
   }
   aturMaks();
 
@@ -595,6 +597,182 @@ async function halamanCampaign(slug) {
       location.hash = `#/campaign/${hasil.slug}`;
       if (!baru) halamanCampaign(hasil.slug);
     } catch (err) { gagal(err); }
+  };
+}
+
+// ----------------------------------------------------------- pengaturan
+function inputDariSkema(nama, a, nilai, opsi = {}) {
+  const id = `s-${nama}`;
+  const mati = opsi.terkunci ? "disabled" : "";
+  const atr = (x) => (x === undefined ? "" : x);
+  if (a.tipe === "boolean")
+    return `<label class="cek"><input type="checkbox" id="${id}" data-k="${esc(nama)}" ${nilai ? "checked" : ""} ${mati}> ${esc(a.label)}</label>`;
+  let el;
+  if (a.tipe === "pilihan") {
+    const lab = a.label_pilihan || {};
+    el = `<select id="${id}" data-k="${esc(nama)}" ${mati}>${a.pilihan.map((p) => {
+      const v = p === null ? "" : String(p);
+      return `<option value="${esc(v)}" ${String(nilai ?? "") === v ? "selected" : ""}>${esc(lab[v] ?? v)}</option>`;
+    }).join("")}</select>`;
+  } else if (a.tipe === "gaya") {
+    el = `<select id="${id}" data-k="${esc(nama)}" ${mati}>${(opsi.gaya || []).map((g) =>
+      `<option ${g === nilai ? "selected" : ""}>${esc(g)}</option>`).join("")}</select>`;
+  } else if (a.tipe === "angka" || a.tipe === "bulat") {
+    el = `<input id="${id}" data-k="${esc(nama)}" type="number" value="${esc(nilai)}" min="${atr(a.min)}" max="${atr(a.maks)}" step="${a.langkah ?? (a.tipe === "bulat" ? 1 : "any")}" ${mati}>`;
+  } else if (a.tipe === "warna") {
+    el = `<input id="${id}" data-k="${esc(nama)}" type="color" value="${esc(nilai)}" ${mati}>`;
+  } else if (a.tipe === "rahasia") {
+    const ada = nilai && nilai.ada;
+    el = `<div class="baris"><span class="lencana ${ada ? "ok" : ""}">${ada ? `tersimpan …${esc(nilai.akhir)}` : "belum diatur"}</span>
+      <input id="${id}" data-k="${esc(nama)}" type="password" autocomplete="off" placeholder="${ada ? "tempel key baru untuk mengganti" : "tempel API key"}" style="flex:1" ${mati}>
+      ${ada && !opsi.terkunci ? `<button type="button" class="ikon" data-hapus-rahasia="${esc(nama)}">Hapus</button>` : ""}</div>`;
+  } else {
+    el = `<input id="${id}" data-k="${esc(nama)}" type="text" value="${esc(nilai ?? "")}" ${opsi.daftar ? `list="${opsi.daftar}"` : ""} ${mati}>`;
+  }
+  return `<label for="${id}">${esc(a.label)}</label>${el}`;
+}
+
+function nilaiInput(el, a) {
+  if (a.tipe === "boolean") return el.checked;
+  if (a.tipe === "angka" || a.tipe === "bulat") return el.value === "" ? null : Number(el.value);
+  if (a.tipe === "pilihan") {
+    const p = a.pilihan.find((x) => String(x ?? "") === el.value);
+    return p === undefined ? el.value : p;
+  }
+  if (a.tipe === "warna") return el.value.toUpperCase();
+  return el.value.trim();
+}
+
+function pratinjauGaya(g) {
+  const bayang = g.bayangan ? `${g.bayangan}px ${g.bayangan}px 0 rgba(0,0,0,.7)` : "none";
+  const o = Math.max(0, g.outline);
+  const garis = o ? [-o, 0, o].flatMap((x) => [-o, 0, o].map((y) => `${x}px ${y}px 0 ${g.warna_outline}`)).join(",") : "";
+  const gaya = g.kotak
+    ? `background:${g.warna_outline};padding:.1em .35em;text-shadow:${bayang};`
+    : `text-shadow:${[garis, bayang !== "none" ? bayang : ""].filter(Boolean).join(",") || "none"};`;
+  // ukuran ASS dirujuk ke tinggi 288; pratinjau 9:16 setinggi 320px
+  return `<div class="pratinjau-gaya"><span style="font-family:'${esc(g.font)}',sans-serif;font-weight:${g.tebal ? 800 : 400};
+    font-size:${(g.ukuran * 320 / 288).toFixed(1)}px;color:${g.warna};${gaya}bottom:${(g.posisi * 320 / 288).toFixed(0)}px">
+    Contoh subtitle klip</span></div>`;
+}
+
+async function halamanPengaturan() {
+  const [d, fonts] = await Promise.all([api("/api/settings"), api("/api/fonts").catch(() => [])]);
+  const gayaKustom = JSON.parse(JSON.stringify(d.nilai.gaya_kustom || {}));
+  const platform = JSON.parse(JSON.stringify(d.platform_efektif || {}));
+  const semuaGaya = () => [...d.gaya_bawaan, ...Object.keys(gayaKustom)];
+  const kelompok = {};
+  for (const [k, a] of Object.entries(d.skema)) (kelompok[a.kelompok] ||= []).push(k);
+
+  isi.innerHTML = `
+  <div class="baris renggang" style="margin-bottom:1rem"><div><h1>Pengaturan</h1>
+    <span class="redup kecil">Berlaku untuk job berikutnya di web UI, MCP, dan CLI — tanpa restart. Disimpan di <code>${esc(d.file)}</code>.</span></div>
+    <button type="button" class="utama" id="simpan-set">Simpan</button></div>
+  <datalist id="daftar-font">${fonts.map((f) => `<option value="${esc(f)}">`).join("")}</datalist>
+  <div class="tumpuk" id="form-set">
+    ${Object.entries(kelompok).map(([nama, kunci]) => `
+      <section class="kartu"><h2>${esc(nama)}</h2><div class="grid-form">
+        ${kunci.map((k) => {
+          const a = d.skema[k], env = d.terkunci_env[k], diubah = d.tersimpan.includes(k);
+          return `<div class="medan">${inputDariSkema(k, a, d.nilai[k], { terkunci: !!env, gaya: semuaGaya() })}
+            <div class="redup kecil">${env ? `<span class="lencana jalan">dikunci env ${esc(env)}</span> ` : ""}${diubah && !env && a.tipe !== "rahasia" ? `<a href="#" data-reset="${esc(k)}">kembalikan bawaan</a> · ` : ""}${esc(a.ket || "")}</div></div>`;
+        }).join("")}
+      </div></section>`).join("")}
+    <section class="kartu"><div class="baris renggang"><h2>Gaya subtitle</h2>
+      <div class="baris"><input id="nama-gaya" placeholder="nama-gaya-baru" pattern="[a-z0-9][a-z0-9-]{0,29}" style="width:12rem">
+      <button type="button" id="tambah-gaya">+ Tambah gaya</button></div></div>
+      <p class="redup kecil">Bawaan (tidak bisa diubah): ${d.gaya_bawaan.map(esc).join(", ")}. Pratinjau hanya perkiraan; hasil akhir dirender libass di server.</p>
+      <div id="daftar-gaya"></div></section>
+    <section class="kartu"><div class="baris renggang"><h2>Aturan platform</h2>
+      <div class="baris"><input id="nama-platform" placeholder="mis. facebook" style="width:10rem"><button type="button" id="tambah-platform">+ Platform</button></div></div>
+      <p class="redup kecil">Durasi maks & catatan safe-zone yang tampil bersama caption per platform di Pustaka klip.</p>
+      <div id="daftar-platform"></div></section>
+  </div>`;
+
+  // --- gaya
+  function gambarGaya() {
+    const el = $("#daftar-gaya");
+    const nama = Object.keys(gayaKustom);
+    el.innerHTML = nama.length ? nama.map((n) => `
+      <div class="gaya-kustom" data-gaya="${esc(n)}">
+        <div class="baris renggang"><strong>${esc(n)}</strong><button type="button" class="ikon" data-hapus-gaya="${esc(n)}">Hapus</button></div>
+        <div class="gaya-isi"><div class="grid-form">${Object.entries(d.skema_gaya).map(([k, a]) =>
+          `<div class="medan">${inputDariSkema(`${n}--${k}`, a, gayaKustom[n][k], { daftar: k === "font" ? "daftar-font" : null }).replace(/data-k="[^"]*"/, `data-gk="${esc(k)}"`)}</div>`).join("")}</div>
+          ${pratinjauGaya(gayaKustom[n])}</div>
+      </div>`).join("") : `<p class="kosong">Belum ada gaya kustom.</p>`;
+  }
+  $("#daftar-gaya").oninput = (e) => {
+    const kartu = e.target.closest("[data-gaya]"), k = e.target.dataset.gk;
+    if (!kartu || !k) return;
+    const n = kartu.dataset.gaya;
+    gayaKustom[n][k] = nilaiInput(e.target, d.skema_gaya[k]);
+    kartu.querySelector(".pratinjau-gaya").outerHTML = pratinjauGaya(gayaKustom[n]);
+  };
+  $("#daftar-gaya").onclick = (e) => {
+    const n = e.target.dataset.hapusGaya;
+    if (n && confirm(`Hapus gaya ${n}?`)) { delete gayaKustom[n]; gambarGaya(); }
+  };
+  $("#tambah-gaya").onclick = () => {
+    const n = $("#nama-gaya").value.trim();
+    if (!/^[a-z0-9][a-z0-9-]{0,29}$/.test(n)) return toast("Nama gaya: huruf kecil, angka, tanda -", true);
+    if (semuaGaya().includes(n)) return toast("Nama sudah dipakai", true);
+    gayaKustom[n] = { ...d.gaya_baru };
+    $("#nama-gaya").value = "";
+    gambarGaya();
+  };
+  gambarGaya();
+
+  // --- platform
+  function gambarPlatform() {
+    $("#daftar-platform").innerHTML = `<table><thead><tr><th>Platform</th><th>Durasi maks (dtk)</th><th>Catatan safe-zone</th></tr></thead><tbody>${
+      Object.entries(platform).map(([p, v]) => `<tr data-p="${esc(p)}"><td>${esc(p)}</td>
+        <td><input type="number" min="5" max="600" data-pf="maks_durasi" value="${esc(v.maks_durasi)}" style="width:6rem"></td>
+        <td><input type="text" maxlength="300" data-pf="catatan" value="${esc(v.catatan)}" style="width:100%"></td></tr>`).join("")
+    }</tbody></table>`;
+  }
+  $("#daftar-platform").oninput = (e) => {
+    const tr = e.target.closest("tr"), f = e.target.dataset.pf;
+    if (!tr || !f) return;
+    platform[tr.dataset.p][f] = f === "maks_durasi" ? Number(e.target.value) : e.target.value;
+  };
+  $("#tambah-platform").onclick = () => {
+    const p = $("#nama-platform").value.trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{0,29}$/.test(p)) return toast("Nama platform: huruf kecil, angka, tanda -", true);
+    platform[p] ||= { maks_durasi: 60, catatan: "Jaga teks penting di area tengah layar 9:16." };
+    $("#nama-platform").value = "";
+    gambarPlatform();
+  };
+  gambarPlatform();
+
+  // --- simpan
+  async function kirim(perubahan, pesan = "Pengaturan disimpan") {
+    try {
+      await api("/api/settings", { method: "PUT", json: perubahan });
+      INFO = await api("/api/info");
+      toast(pesan);
+      halamanPengaturan();
+    } catch (err) { gagal(err); }
+  }
+  $("#form-set").onclick = (e) => {
+    const k = e.target.dataset.reset;
+    if (k) { e.preventDefault(); kirim({ [k]: null }, "Dikembalikan ke bawaan"); }
+    const r = e.target.dataset.hapusRahasia;
+    if (r && confirm("Hapus API key dari server?")) kirim({ [r]: null }, "API key dihapus");
+  };
+  $("#simpan-set").onclick = () => {
+    const perubahan = {};
+    for (const [k, a] of Object.entries(d.skema)) {
+      const el = document.getElementById(`s-${k}`);
+      if (!el || el.disabled) continue;
+      const v = nilaiInput(el, a);
+      if (a.tipe === "rahasia") { if (v) perubahan[k] = v; continue; }
+      if (v === null) continue;
+      if (JSON.stringify(v) !== JSON.stringify(d.nilai[k] ?? null)) perubahan[k] = v;
+    }
+    if (JSON.stringify(gayaKustom) !== JSON.stringify(d.nilai.gaya_kustom || {})) perubahan.gaya_kustom = gayaKustom;
+    if (JSON.stringify(platform) !== JSON.stringify(d.platform_efektif || {})) perubahan.platform = platform;
+    if (!Object.keys(perubahan).length) return toast("Tidak ada perubahan");
+    kirim(perubahan);
   };
 }
 

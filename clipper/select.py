@@ -94,7 +94,8 @@ def hook(window: Window, min_kata: int = 5, koreksi: dict | None = None) -> str:
 MAKS_PANGKAS = 0.4
 
 
-def snap_to_windows(props, segmen: list[Segment], min_s: float, max_s: float) -> list[Window]:
+def snap_to_windows(props, segmen: list[Segment], min_s: float, max_s: float, *,
+                    maks_pangkas: float = MAKS_PANGKAS) -> list[Window]:
     """Tempel usulan LLM ke batas kalimat: mulai di awal kalimat terdekat
     sebelum/di proposal.start, berakhir di akhir segmen (diutamakan akhir
     kalimat) yang mencakup proposal.end dan menjaga durasi dalam [min_s, max_s].
@@ -124,7 +125,7 @@ def snap_to_windows(props, segmen: list[Segment], min_s: float, max_s: float) ->
         pilih = next((k for k in akhir_kalimat if segmen[k].end >= p.end), None)
         if pilih is None and akhir_kalimat:
             diminta = max(p.end - mulai, 1e-6)
-            if (segmen[akhir_kalimat[-1]].end - mulai) / diminta >= 1 - MAKS_PANGKAS:
+            if (segmen[akhir_kalimat[-1]].end - mulai) / diminta >= 1 - maks_pangkas:
                 pilih = akhir_kalimat[-1]
         if pilih is None:
             pilih = next((k for k in kandidat if segmen[k].end >= p.end), kandidat[-1])

@@ -152,7 +152,8 @@ def smooth_path(centres: list[tuple[float, float]], *, max_dx_per_s: float) -> l
 
 
 def plan_reframe(frames: list[list[FaceBox]], src_w: int, src_h: int, *,
-                 multi_face_ratio=0.3) -> SingleFace | BlurPad:
+                 multi_face_ratio=0.3, kecepatan=0.15) -> SingleFace | BlurPad:
+    """kecepatan = geser kamera maksimum per detik, dalam porsi lebar sumber."""
     if not frames:
         return BlurPad()
     n = len(frames)
@@ -165,7 +166,7 @@ def plan_reframe(frames: list[list[FaceBox]], src_w: int, src_h: int, *,
         if f:
             p = max(f, key=lambda b: b.w * b.h)
             raw.append((p.t, p.cx))
-    return SingleFace(smooth_path(raw, max_dx_per_s=src_w * 0.15))
+    return SingleFace(smooth_path(raw, max_dx_per_s=src_w * kecepatan))
 
 
 def blur_pad_graph(out_w: int = 1080, out_h: int = 1920) -> str:

@@ -16,11 +16,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from clipper import campaign as camp
 from clipper import pipeline, source
 from clipper.config import load_settings
-from clipper.styles import STYLES
+from clipper.styles import STYLES, semua_gaya
 from clipper.pipeline import run_subprocess as jalankan
 
 
-def ambil_sumber(target: str, kerja: Path) -> tuple[Path, Path | None]:
+def ambil_sumber(target: str, kerja: Path, settings) -> tuple[Path, Path | None]:
     """Kembalikan (video, subtitle-vtt-atau-None)."""
     lokal = Path(target)
     if lokal.exists():
@@ -29,10 +29,10 @@ def ambil_sumber(target: str, kerja: Path) -> tuple[Path, Path | None]:
         return lokal, (teks[0] if teks else None)
     kerja.mkdir(parents=True, exist_ok=True)
     print(f"[unduh] {target}")
-    jalankan(source.download_cmd(target, kerja))
+    jalankan(source.download_cmd(target, kerja, tinggi=settings.tinggi_unduh))
     # subtitle boleh gagal (YouTube sering balas 429) — Whisper jadi cadangan
     try:
-        jalankan(source.subtitle_cmd(target, kerja))
+        jalankan(source.subtitle_cmd(target, kerja, bahasa=settings.bahasa_subtitle))
     except RuntimeError as e:
         print(f"[unduh] subtitle tidak dapat diambil ({str(e)[:80]}...)")
     video = max(kerja.glob("*.mp4"), key=lambda p: p.stat().st_mtime)
@@ -47,14 +47,15 @@ def main() -> None:
     ap.add_argument("--jumlah", type=int, default=5)
     ap.add_argument("--lewati", type=int, default=0,
                     help="lewati N kandidat teratas (untuk membuat batch lanjutan)")
-    ap.add_argument("--maks-durasi", type=float, default=60,
-                    help="klip pendek lebih disukai algoritma TikTok/Reels (default 60 dtk)")
+    ap.add_argument("--maks-durasi", type=float, default=None,
+                    help="default dari Pengaturan (umumnya 60 dtk, disukai TikTok/Reels)")
     ap.add_argument("--ai", choices=["keyword", "gemini"], default=None,
-                    help="pemilih momen (default: dari ~/.clipper.toml / env, else keyword)")
+                    help="pemilih momen (default: dari Pengaturan / env, else keyword)")
     ap.add_argument("--keluaran", default="work")
     args = ap.parse_args()
 
-    settings = load_settings()
+    # setelan yang sama dengan web UI & MCP: <keluaran>/settings.json
+    settings = load_settings(json_path=Path(args.keluaran) / "settings.json")
     if args.ai:
         settings = replace(settings, ai_provider=args.ai)
     c = camp.load(args.brief)
@@ -62,9 +63,10 @@ def main() -> None:
     klip_dir = kerja / "clips"
     klip_dir.mkdir(parents=True, exist_ok=True)
 
-    video, vtt = ambil_sumber(args.sumber, kerja / "sumber")
+    video, vtt = ambil_sumber(args.sumber, kerja / "sumber", settings)
     print(f"[transkrip] {'subtitle bawaan: ' + vtt.name if vtt else 'tidak ada subtitle — Whisper (butuh beberapa menit)'}")
-    segmen = pipeline.transcribe(video, vtt)
+    segmen = pipeline.transcribe(video, vtt, whisper_model=settings.whisper_model,
+                                 language=settings.bahasa)
     if not segmen:
         raise SystemExit("transkrip kosong — tidak bisa memilih momen")
     print(f"[transkrip] {len(segmen)} segmen, {segmen[-1].end/60:.1f} menit")
@@ -79,10 +81,12 @@ def main() -> None:
             print(f"[render] {info['nama']} ({info['durasi']:.0f} dtk) ...")
 
     hasil = pipeline.process(c, video, segmen, klip_dir, jumlah=args.jumlah,
-                             lewati=args.lewati, maks_durasi=args.maks_durasi,
+                             lewati=args.lewati, maks_durasi=args.maks_durasi or settings.maks_durasi,
                              chooser=pipeline.make_chooser(settings),
                              reframe_planner=pipeline.make_reframe_planner(settings),
-                             style=STYLES.get(settings.subtitle_style, STYLES["lato"]),
+                             style=semua_gaya(settings.gaya_kustom).get(settings.subtitle_style,
+                                                                        STYLES["lato"]),
+                             settings=settings,
                              on_progress=lapor)
     catatan = [{"file": r.file, "mulai": r.mulai, "durasi": r.durasi, "hook": r.hook}
                for r in hasil]

@@ -11,7 +11,8 @@ FFMPEG = os.getenv("FFMPEG_BIN", "ffmpeg")
 W, H = 1080, 1920
 
 def cut_cmd(src, start: float, end: float, out_mp4, *,
-            filtergraph: str | None = None) -> list[str]:
+            filtergraph: str | None = None, crf: int = 23, preset: str = "veryfast",
+            audio_kbps: int = 160) -> list[str]:
     # -ss ditaruh sebelum -i: ffmpeg loncat langsung ke posisi, tidak mendekode dari awal.
     # Default: video sumber ditaruh di sepertiga atas, sisa layar diisi versi blur
     # (satu sumber kebenaran: reframe.blur_pad_graph).
@@ -19,8 +20,8 @@ def cut_cmd(src, start: float, end: float, out_mp4, *,
     fc = filtergraph if filtergraph is not None else blur_pad_graph(W, H)
     return [FFMPEG, "-y", "-ss", f"{start:.3f}", "-i", str(src), "-t", f"{durasi:.3f}",
             "-filter_complex", fc, "-map", "[v]", "-map", "0:a?",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
-            "-c:a", "aac", "-b:a", "160k", "-ar", "44100", "-ac", "2", str(out_mp4)]
+            "-c:v", "libx264", "-preset", preset, "-crf", str(int(crf)), "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", f"{int(audio_kbps)}k", "-ar", "44100", "-ac", "2", str(out_mp4)]
 
 def _ts(detik: float) -> str:
     ms = int(round(detik * 1000))
@@ -80,8 +81,9 @@ def write_srt(window, out_path, maks_karakter: int = 46, koreksi: dict | None = 
     Path(out_path).write_text("\n".join(baris), encoding="utf-8")
 
 def burn_cmd(in_mp4, srt_name: str, out_mp4, *,
-             style: SubtitleStyle = STYLES["lato"]) -> list[str]:
+             style: SubtitleStyle = STYLES["lato"], crf: int = 23,
+             preset: str = "veryfast") -> list[str]:
     return [FFMPEG, "-y", "-i", str(in_mp4),
             "-vf", f"subtitles={srt_name}:force_style='{style.force_style}'",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
+            "-c:v", "libx264", "-preset", preset, "-crf", str(int(crf)), "-pix_fmt", "yuv420p",
             "-c:a", "copy", str(out_mp4)]

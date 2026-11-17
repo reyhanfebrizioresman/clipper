@@ -18,15 +18,16 @@ import re
 import subprocess
 import threading
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from . import campaign as camp
 from . import export, jobs, pipeline, select, source
 from .brain.base import Proposal
-from .config import Settings, load_settings
-from .styles import STYLES
+from .config import (GAYA_BAWAAN_BARU, SKEMA, SKEMA_GAYA, SKEMA_PLATFORM, Settings,
+                     SettingsError, baca_json, load_settings, simpan_json, terkunci_env)
+from .styles import STYLES, semua_gaya
 from .transcript import Segment
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -83,15 +84,70 @@ class ClipperService:
     def __init__(self, campaigns_dir: Path, work_dir: Path,
                  settings: Settings | None = None, *, run: Run = jobs.run_bisa_batal,
                  transcriber: Callable[..., list[Segment]] = jobs.transkrip_bisa_batal,
-                 face_detector: Callable | None = None):
+                 face_detector: Callable | None = None,
+                 settings_path: Path | None = None, toml_path: Path | str = "~/.clipper.toml"):
         self.campaigns_dir = Path(campaigns_dir).expanduser()
         self.work_dir = Path(work_dir).expanduser()
-        self.settings = settings or load_settings()
+        # settings tetap (tes) atau dinamis: settings.json di work dir, diatur dari web UI,
+        # dibaca ulang tiap kali berubah -> berlaku di job berikutnya tanpa restart
+        self._settings_tetap = settings
+        self.settings_path = Path(settings_path) if settings_path else self.work_dir / "settings.json"
+        self.toml_path = Path(str(toml_path)).expanduser()
+        self._settings_cache: Settings | None = None
+        self._settings_kunci: tuple | None = None
         self.run = run
         self.transcriber = transcriber
         self.face_detector = face_detector  # None = mediapipe (reframe._mediapipe_detector)
         # fetch & render makan CPU penuh dan menomori file: satu per satu
         self._kunci = threading.Lock()
+
+    @property
+    def settings(self) -> Settings:
+        if self._settings_tetap is not None:
+            return self._settings_tetap
+
+        def mtime(p: Path):
+            try:
+                return p.stat().st_mtime_ns
+            except OSError:
+                return None
+        kunci = (mtime(self.settings_path), mtime(self.toml_path))
+        if self._settings_cache is None or kunci != self._settings_kunci:
+            self._settings_cache = load_settings(path=self.toml_path, json_path=self.settings_path)
+            self._settings_kunci = kunci
+        return self._settings_cache
+
+    @settings.setter
+    def settings(self, nilai: Settings) -> None:
+        self._settings_tetap = nilai
+
+    def gaya_subtitle(self, s: Settings | None = None) -> dict:
+        return semua_gaya((s or self.settings).gaya_kustom)
+
+    def get_settings(self) -> dict:
+        """Setelan efektif untuk UI. API key tidak pernah dikirim utuh."""
+        s = self.settings
+        nilai = {f.name: getattr(s, f.name) for f in fields(Settings)}
+        key = nilai.pop("gemini_api_key")
+        nilai["gemini_api_key"] = {"ada": bool(key), "akhir": key[-4:] if key and len(key) >= 8 else ""}
+        tersimpan = baca_json(self.settings_path)
+        tersimpan.pop("gemini_api_key", None)
+        return {"nilai": nilai, "tersimpan": sorted(tersimpan), "terkunci_env": terkunci_env(),
+                "skema": SKEMA, "skema_gaya": SKEMA_GAYA, "gaya_baru": GAYA_BAWAAN_BARU,
+                "skema_platform": SKEMA_PLATFORM, "gaya_bawaan": sorted(STYLES),
+                "platform_efektif": export.aturan_efektif(s.platform),
+                "file": str(self.settings_path)}
+
+    def save_settings(self, perubahan: dict) -> dict:
+        """Simpan perubahan (sebagian). null = kembalikan ke bawaan."""
+        if not isinstance(perubahan, dict):
+            raise ClipperError("setelan harus objek JSON")
+        try:
+            simpan_json(self.settings_path, perubahan, gaya_dikenal=set(STYLES))
+        except SettingsError as e:
+            raise ClipperError(str(e)) from None
+        self._settings_kunci = None          # paksa baca ulang
+        return self.get_settings()
 
     def _run(self, cmd: list[str], cwd=None) -> None:
         # periksa batal sebelum & sesudah: run palsu di tes tidak tahu soal token
@@ -237,10 +293,14 @@ class ClipperService:
         data = json.loads((self._source_dir(source_id) / "transcript.json").read_text(encoding="utf-8"))
         return [Segment(a, b, t) for a, b, t in data]
 
-    def fetch_source(self, target: str, *, whisper_model: str = "small",
+    def fetch_source(self, target: str, *, whisper_model: str | None = None,
                      language: str | None = None, paksa_whisper: bool = False,
                      ulang: bool = False, on_progress: Progress | None = None) -> dict:
+        """whisper_model/language None = ambil dari pengaturan."""
         lapor = on_progress or (lambda t, i: None)
+        st_ = self.settings
+        whisper_model = whisper_model or st_.whisper_model
+        language = language or st_.bahasa
         source_id, lokal = self._id_untuk(target)
         sdir = self._source_dir(source_id)
         meta_p = sdir / "meta.json"
@@ -270,9 +330,9 @@ class ClipperService:
                 vtt = teks[0] if teks else None
             else:
                 lapor("unduh", {"url": target})
-                self._run(source.download_cmd(target, sdir))
+                self._run(source.download_cmd(target, sdir, tinggi=st_.tinggi_unduh))
                 try:
-                    self._run(source.subtitle_cmd(target, sdir))
+                    self._run(source.subtitle_cmd(target, sdir, bahasa=st_.bahasa_subtitle))
                 except RuntimeError as e:  # YouTube sering 429; Whisper cadangannya
                     lapor("peringatan", {"pesan": f"subtitle tidak terambil: {str(e)[:120]}"})
                 mp4 = sorted(sdir.glob("*.mp4"), key=lambda p: p.stat().st_mtime)
@@ -350,7 +410,9 @@ class ClipperService:
 
     # ------------------------------------------------------------------ kandidat
     def _batas(self, c: camp.Campaign, min_s: float | None, max_s: float | None,
-               maks_durasi: float) -> tuple[float, float]:
+               maks_durasi: float | None) -> tuple[float, float]:
+        if maks_durasi is None:
+            maks_durasi = self.settings.maks_durasi
         lo = c.durasi_min_s if min_s is None else max(float(min_s), 1.0)
         hi = min(c.durasi_maks_s, maks_durasi) if max_s is None else float(max_s)
         if lo >= hi:
@@ -358,7 +420,7 @@ class ClipperService:
         return lo, hi
 
     def list_candidate_windows(self, source_id: str, slug: str, *, min_s: float | None = None,
-                               max_s: float | None = None, maks_durasi: float = 60.0,
+                               max_s: float | None = None, maks_durasi: float | None = None,
                                urut: str = "waktu", offset: int = 0, limit: int = 30) -> dict:
         c = self.load_campaign(slug)
         lo, hi = self._batas(c, min_s, max_s, maks_durasi)
@@ -400,7 +462,7 @@ class ClipperService:
         return max(nomor, default=0)
 
     def _render(self, source_id: str, slug: str, chooser, jumlah: int, *, gaya: str | None,
-                reframe: bool | None, maks_durasi: float, catatan: list[dict],
+                reframe: bool | None, maks_durasi: float | None, catatan: list[dict],
                 on_progress: Progress | None) -> list[dict]:
         """catatan[i] = info tambahan untuk window ke-i yang dikembalikan chooser."""
         c = self.load_campaign(slug)
@@ -409,10 +471,14 @@ class ClipperService:
         if not video.is_file():
             raise ClipperError(f"video sumber hilang: {video} — fetch_source ulang dengan ulang=true")
         segmen = self.segments(source_id)
-        gaya = gaya or self.settings.subtitle_style
-        if gaya not in STYLES:
-            raise ClipperError(f"gaya subtitle tidak dikenal: {gaya!r}. Pilihan: {sorted(STYLES)}")
-        s = self.settings if reframe is None else replace(self.settings, reframe=reframe)
+        dasar = self.settings                    # satu snapshot untuk seluruh job
+        if maks_durasi is None:
+            maks_durasi = dasar.maks_durasi
+        semua = self.gaya_subtitle(dasar)
+        gaya = gaya or dasar.subtitle_style
+        if gaya not in semua:
+            raise ClipperError(f"gaya subtitle tidak dikenal: {gaya!r}. Pilihan: {sorted(semua)}")
+        s = dasar if reframe is None else replace(dasar, reframe=reframe)
 
         with self._giliran(on_progress or (lambda t, i: None)):
             klip_dir = self._clip_dir(slug, source_id)
@@ -421,7 +487,7 @@ class ClipperService:
             hasil = pipeline.process(
                 c, video, segmen, klip_dir, jumlah=jumlah, lewati=lewati,
                 maks_durasi=maks_durasi, chooser=chooser, run=self._run,
-                on_progress=on_progress, style=STYLES[gaya],
+                on_progress=on_progress, style=semua[gaya], settings=s,
                 reframe_planner=pipeline.make_reframe_planner(
                     s, detector=self._detektor_wajah(source_id)))
             manifest = self._manifest(slug, source_id)
@@ -445,7 +511,7 @@ class ClipperService:
 
     def render_clips(self, source_id: str, slug: str, pilihan: Iterable[Selection | dict], *,
                      gaya: str | None = None, reframe: bool | None = None,
-                     maks_durasi: float = 60.0, on_progress: Progress | None = None) -> dict:
+                     maks_durasi: float | None = None, on_progress: Progress | None = None) -> dict:
         """Render momen pilihan klien. Tiap pilihan ditempel ke batas kalimat
         (aturan campaign: jangan memotong sampai mengubah makna)."""
         c = self.load_campaign(slug)
@@ -460,7 +526,7 @@ class ClipperService:
                 continue
             snap = select.snap_to_windows(
                 [Proposal(sel.start, sel.end, sel.hook_title.strip(), sel.alasan, score=None)],
-                segmen, lo, hi)
+                segmen, lo, hi, maks_pangkas=self.settings.maks_pangkas)
             if not snap:
                 dilewati.append({"pilihan": i, "alasan": f"tidak bisa ditempel ke kalimat utuh "
                                  f"dengan durasi {lo:g}-{hi:g} dtk"})
@@ -482,7 +548,7 @@ class ClipperService:
 
     def auto_clips(self, source_id: str, slug: str, *, jumlah: int = 5, lewati: int = 0,
                    ai: str | None = None, gaya: str | None = None, reframe: bool | None = None,
-                   maks_durasi: float = 60.0, on_progress: Progress | None = None) -> dict:
+                   maks_durasi: float | None = None, on_progress: Progress | None = None) -> dict:
         """Pilih momen dengan otak engine sendiri (kata kunci / Gemini), lalu render."""
         s = self.settings if ai is None else replace(self.settings, ai_provider=ai)
         if s.ai_provider not in ("keyword", "gemini"):
@@ -547,7 +613,8 @@ class ClipperService:
         caption = cap_p.read_text(encoding="utf-8") if cap_p.is_file() else None
         # sumber kebenaran hook = caption .txt (manifest lama menyimpan hook terpotong)
         hook = caption.rsplit("\n\n", 1)[0] if caption else m.get("hook")
-        varian = [asdict(v) for v in export.platform_variants(c, hook)] if hook else []
+        varian = ([asdict(v) for v in export.platform_variants(c, hook, aturan=self.settings.platform)]
+                  if hook else [])
         return {**m, "hook": hook, "path": str(f), "ukuran_mb": round(f.stat().st_size / 1e6, 1),
                 "caption": caption,
                 "srt": srt_p.read_text(encoding="utf-8") if srt_p.is_file() else None,

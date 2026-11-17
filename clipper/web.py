@@ -19,6 +19,7 @@ import atexit
 import functools
 import re
 import shutil
+import subprocess
 import uuid
 from pathlib import Path
 from typing import Any
@@ -30,7 +31,6 @@ from pydantic import BaseModel, Field
 
 from .jobs import Job, JobManager
 from .service import ClipperError, ClipperService, Selection
-from .styles import STYLES
 
 STATIC = Path(__file__).resolve().parent / "web_static"
 HOST_LOOPBACK = {"127.0.0.1", "localhost", "::1", "[::1]"}
@@ -58,7 +58,7 @@ class RenderReq(BaseModel):
     pilihan: list[Pilihan] = Field(min_length=1, max_length=30)
     gaya: str | None = None
     reframe: bool | None = None
-    maks_durasi: float = Field(60.0, gt=0, le=600)
+    maks_durasi: float | None = Field(None, gt=0, le=600)
 
 
 class AutoReq(BaseModel):
@@ -69,7 +69,7 @@ class AutoReq(BaseModel):
     ai: str | None = None
     gaya: str | None = None
     reframe: bool | None = None
-    maks_durasi: float = Field(60.0, gt=0, le=600)
+    maks_durasi: float | None = Field(None, gt=0, le=600)
 
 
 def _host_lokal(host_header: str | None) -> bool:
@@ -120,9 +120,28 @@ def create_app(svc: ClipperService | None = None, jobs: JobManager | None = None
     @app.get("/api/info")
     def info() -> dict[str, Any]:
         s = layanan().settings
-        return {"gaya": sorted(STYLES), "gaya_bawaan": s.subtitle_style,
+        return {"gaya": sorted(layanan().gaya_subtitle(s)), "gaya_bawaan": s.subtitle_style,
                 "reframe_bawaan": s.reframe, "ai_bawaan": s.ai_provider,
-                "gemini_siap": bool(s.gemini_api_key)}
+                "maks_durasi_bawaan": s.maks_durasi, "gemini_siap": bool(s.gemini_api_key)}
+
+    # ------------------------------------------------------------- pengaturan
+    @app.get("/api/settings")
+    def pengaturan() -> dict:
+        return layanan().get_settings()
+
+    @app.put("/api/settings")
+    def simpan_pengaturan(perubahan: dict[str, Any]) -> dict:
+        return layanan().save_settings(perubahan)
+
+    @app.get("/api/fonts")
+    def font() -> list[str]:
+        """Font yang terpasang di server (untuk gaya subtitle; libass memakai fontconfig)."""
+        try:
+            out = subprocess.run(["fc-list", ":", "family"], capture_output=True, text=True,
+                                 timeout=10).stdout
+        except (OSError, subprocess.SubprocessError):
+            return []
+        return sorted({n.strip() for baris in out.splitlines() for n in baris.split(",") if n.strip()})
 
     # -------------------------------------------------------------- campaign
     @app.get("/api/campaigns")
@@ -185,7 +204,7 @@ def create_app(svc: ClipperService | None = None, jobs: JobManager | None = None
 
     @app.get("/api/sources/{source_id}/candidates")
     def kandidat(source_id: str, campaign: str, urut: str = "skor", limit: int = 200,
-                 maks_durasi: float = 60.0) -> dict:
+                 maks_durasi: float | None = None) -> dict:
         return layanan().list_candidate_windows(source_id, campaign, urut=urut, limit=limit,
                                                 maks_durasi=maks_durasi)
 

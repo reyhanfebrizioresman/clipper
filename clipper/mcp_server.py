@@ -117,7 +117,8 @@ class Pilihan(BaseModel):
     alasan: str = Field("", description="kenapa momen ini dipilih (disimpan di manifest)")
 
 
-Gaya = Literal["lato", "bold", "karaoke"]
+Gaya = Annotated[str, Field(description="nama gaya subtitle: lato, bold, karaoke, atau gaya kustom "
+                                        "dari Pengaturan web UI; kosong = gaya bawaan pengaturan")]
 Tunggu = Annotated[float, Field(description="detik menunggu job sebelum kembali dengan status "
                                             "'berjalan' (maks 3000)")]
 
@@ -160,11 +161,11 @@ def get_transcript(source_id: str, mulai_s: float = 0.0, sampai_s: float | None 
 
 @mcp.tool()
 def list_candidate_windows(source_id: str, campaign: str, min_s: float | None = None,
-                           max_s: float | None = None, maks_durasi: float = 60.0,
+                           max_s: float | None = None, maks_durasi: float | None = None,
                            urut: Literal["waktu", "skor"] = "waktu",
                            offset: int = 0, limit: int = 30) -> dict[str, Any]:
     """Potongan kandidat yang mulai di awal kalimat (akhir_kalimat: juga selesai di akhir kalimat), dalam batas durasi campaign
-    (default dibatasi maks_durasi 60 dtk, disukai TikTok/Reels). skor_kata_kunci = jumlah
+    (maks_durasi kosong = bawaan dari pengaturan, umumnya 60 dtk untuk TikTok/Reels). skor_kata_kunci = jumlah
     kemunculan keywords brief. Ini bahan menalar, bukan keputusan akhir."""
     return svc().list_candidate_windows(source_id, campaign, min_s=min_s, max_s=max_s,
                                         maks_durasi=maks_durasi, urut=urut,
@@ -188,8 +189,10 @@ def get_clip(campaign: str, source_id: str, file: str) -> dict[str, Any]:
 @mcp.tool()
 async def fetch_source(
     sumber: Annotated[str, Field(description="URL video (YouTube dll.) atau path file di server")],
-    whisper_model: Annotated[str, Field(description="model faster-whisper bila tak ada subtitle")] = "small",
-    bahasa: Annotated[str | None, Field(description="kode bahasa Whisper, mis. 'id'; kosong = auto")] = None,
+    whisper_model: Annotated[str | None, Field(description="model faster-whisper bila tak ada subtitle; "
+                                                       "kosong = dari pengaturan")] = None,
+    bahasa: Annotated[str | None, Field(description="kode bahasa Whisper, mis. 'id'; kosong = dari "
+                                                    "pengaturan (bawaan: deteksi otomatis)")] = None,
     paksa_whisper: Annotated[bool, Field(description="abaikan subtitle bawaan, transkrip ulang pakai Whisper")] = False,
     ulang: Annotated[bool, Field(description="abaikan cache, unduh & transkrip ulang")] = False,
     tunggu_s: Tunggu = TUNGGU_BAWAAN,
@@ -205,7 +208,7 @@ async def fetch_source(
 @mcp.tool()
 async def render_clips(source_id: str, campaign: str, pilihan: list[Pilihan],
                        gaya: Gaya | None = None, reframe: bool | None = None,
-                       maks_durasi: float = 60.0, tunggu_s: Tunggu = TUNGGU_BAWAAN,
+                       maks_durasi: float | None = None, tunggu_s: Tunggu = TUNGGU_BAWAAN,
                        ctx: Context = None) -> dict[str, Any]:
     """[job] Render momen pilihanmu jadi klip 9:16 + subtitle + caption (.txt berhashtag
     wajib). Waktu ditempel ke kalimat utuh dan durasi dijaga dalam batas campaign; pilihan
@@ -221,10 +224,10 @@ async def render_clips(source_id: str, campaign: str, pilihan: list[Pilihan],
 @mcp.tool()
 async def auto_clips(source_id: str, campaign: str, jumlah: int = 5, lewati: int = 0,
                      ai: Literal["keyword", "gemini"] | None = None, gaya: Gaya | None = None,
-                     reframe: bool | None = None, maks_durasi: float = 60.0,
+                     reframe: bool | None = None, maks_durasi: float | None = None,
                      tunggu_s: Tunggu = TUNGGU_BAWAAN, ctx: Context = None) -> dict[str, Any]:
     """[job] Pilih & render otomatis dengan pemilih engine sendiri (kata kunci, atau Gemini
-    bila GEMINI_API_KEY ada di server). lewati = lompati N kandidat teratas (batch lanjutan).
+    bila API key Gemini diatur di server). lewati = lompati N kandidat teratas (batch lanjutan).
     hasil.pemilih = pemilih yang benar-benar dipakai."""
     return await _mulai(ctx, "auto_clips", tunggu_s, svc().auto_clips,
                         source_id=source_id, slug=campaign, jumlah=jumlah, lewati=lewati,

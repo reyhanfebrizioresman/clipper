@@ -29,20 +29,21 @@ def _yt_dlp() -> list[str]:
         cmd += ["--js-runtimes", f"deno:{deno}"]
     return cmd
 
-def download_cmd(url: str, out_dir) -> list[str]:
+def download_cmd(url: str, out_dir, *, tinggi: int = 1080) -> list[str]:
+    t = int(tinggi)
     return _yt_dlp() + [
-        "-f", "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "-f", f"bestvideo[height<={t}][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "--merge-output-format", "mp4",
         "--retries", "3",
         "--no-playlist",  # URL watch?v=..&list=.. jangan unduh satu playlist
         "-o", str(Path(out_dir) / "%(id)s.%(ext)s"),
         url]
 
-def subtitle_cmd(url: str, out_dir) -> list[str]:
+def subtitle_cmd(url: str, out_dir, *, bahasa: str = "id") -> list[str]:
     return _yt_dlp() + [
         "--skip-download",
         "--write-auto-subs", "--write-subs",
-        "--sub-langs", "id",
+        "--sub-langs", bahasa,
         "--convert-subs", "vtt",
         "--sleep-requests", "2",
         "--retries", "2",

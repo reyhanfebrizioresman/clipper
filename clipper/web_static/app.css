@@ -102,6 +102,16 @@ th { font-size: .8rem; color: var(--redup); font-weight: 600; }
 .daftar-campaign a.aktif { background: var(--aksen-lembut); color: var(--aksen); font-weight: 600; }
 .grid-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 1rem; }
 
+/* pengaturan */
+.gaya-kustom { border: 1px solid var(--garis); border-radius: 8px; padding: .75rem; margin-bottom: .75rem; }
+.gaya-isi { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 1rem; align-items: start; margin-top: .5rem; }
+.pratinjau-gaya { position: relative; width: 180px; height: 320px; border-radius: 8px; overflow: hidden;
+  background: linear-gradient(160deg, #3a4a5c, #1c2430 60%, #2b1e1e); }
+.pratinjau-gaya span { position: absolute; left: 50%; transform: translateX(-50%); white-space: nowrap; line-height: 1.2; }
+input[type=color] { padding: 0; height: 2.1rem; width: 100%; }
+code { font-size: .85em; background: var(--bg); padding: .05rem .3rem; border-radius: 4px; }
+@media (max-width: 900px) { .gaya-isi { grid-template-columns: 1fr; } .pratinjau-gaya { margin: 0 auto; } }
+
 /* job & toast */
 .panel-job { position: fixed; right: 1rem; top: 3.6rem; z-index: 20; width: min(420px, calc(100vw - 2rem));
   max-height: 70vh; overflow-y: auto; background: var(--kartu); border: 1px solid var(--garis);

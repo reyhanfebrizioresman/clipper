@@ -55,7 +55,8 @@ def make_chooser(settings: Settings) -> Chooser:
     if settings.ai_provider == "gemini":
         try:
             from .brain.gemini import GeminiScorer
-            return brain_chooser(GeminiScorer(settings.gemini_api_key or ""))
+            return brain_chooser(GeminiScorer(settings.gemini_api_key or "",
+                                              model=settings.gemini_model))
         except Exception:
             return keyword_chooser
     return keyword_chooser
@@ -78,11 +79,12 @@ def rebase_frames(frames, start: float, end: float, fps_sample: float):
     return [[FaceBox(fb.t - start, fb.cx, fb.cy, fb.w, fb.h) for fb in f] for f in potong]
 
 
-def make_reframe_planner(settings: Settings, *, fps_sample: float = 5, detector=None):
+def make_reframe_planner(settings: Settings, *, fps_sample: float | None = None, detector=None):
     """Planner (video, window) -> filtergraph | None. Semua impor/probe malas;
     gagal apa pun -> None (cut_cmd memakai blur-pad)."""
     if not settings.reframe:
         return None
+    fps_sample = fps_sample or settings.reframe_fps
     cache: dict = {}
 
     def planner(video: Path, w: select.Window) -> str | None:
@@ -95,7 +97,9 @@ def make_reframe_planner(settings: Settings, *, fps_sample: float = 5, detector=
                                                               detector=detector))
             sw, sh, frames = cache[key]
             potong = rebase_frames(frames, w.start, w.end, fps_sample)
-            return reframe.build_filter(reframe.plan_reframe(potong, sw, sh), sw, sh)
+            rencana = reframe.plan_reframe(potong, sw, sh, multi_face_ratio=settings.reframe_ambang,
+                                           kecepatan=settings.reframe_kecepatan)
+            return reframe.build_filter(rencana, sw, sh)
         except Exception as e:
             # tetap jalan dengan blur-pad, tapi jangan diam: dulu mediapipe yang rusak
             # membuat reframe tak pernah aktif tanpa ada yang tahu
@@ -150,7 +154,9 @@ def process(c: Campaign, video: Path, segmen: list[Segment], klip_dir: Path, *,
             on_progress: Progress | None = None,
             style: SubtitleStyle = STYLES["lato"],
             reframe_planner: Callable[[Path, select.Window], str | None] | None = None,
+            settings: Settings | None = None,
             ) -> list[ClipResult]:
+    s = settings or Settings()   # kualitas encode & panjang baris subtitle
     def lapor(tahap: str, **info) -> None:
         if on_progress:
             on_progress(tahap, info)
@@ -174,11 +180,13 @@ def process(c: Campaign, video: Path, segmen: list[Segment], klip_dir: Path, *,
         final = klip_dir / f"{nama}.mp4"
         lapor("render", nama=nama, rank=n, durasi=round(w.end - w.start, 1))
         fg = reframe_planner(video, w) if reframe_planner else None
-        run(render.cut_cmd(video, w.start, w.end, mentah, filtergraph=fg))
-        render.write_srt(w, srt, koreksi=c.koreksi)
+        run(render.cut_cmd(video, w.start, w.end, mentah, filtergraph=fg, crf=s.crf,
+                           preset=s.preset, audio_kbps=s.audio_kbps))
+        render.write_srt(w, srt, maks_karakter=s.karakter_per_baris, koreksi=c.koreksi)
         # dijalankan dari folder klip: filter subtitles ffmpeg memakai nama file
         # relatif (path absolut butuh escaping yang rapuh)
-        run(render.burn_cmd(mentah.resolve(), srt.name, final.resolve(), style=style), cwd=klip_dir)
+        run(render.burn_cmd(mentah.resolve(), srt.name, final.resolve(), style=style,
+                            crf=s.crf, preset=s.preset), cwd=klip_dir)
         mentah.unlink(missing_ok=True)
 
         hook = (w.hook_title or "").strip() or select.hook(w, koreksi=c.koreksi)
