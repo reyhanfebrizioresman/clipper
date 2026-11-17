@@ -3,6 +3,9 @@
 Mesin pemotong klip untuk campaign clipping (Clippo/TernakKlip).
 Dari satu video panjang jadi beberapa klip 9:16 siap unggah + caption berisi hashtag wajib.
 
+**Instalasi (Linux, macOS, Windows, GPU):** [docs/instalasi.md](docs/instalasi.md).
+Setelah memasang, periksa dengan `.venv/bin/python scripts/cek_instalasi.py --unduh-model`.
+
 ```
 python scripts/make_clips.py campaigns/ftm-potrade.json <url-atau-file> --jumlah 5
 ```
