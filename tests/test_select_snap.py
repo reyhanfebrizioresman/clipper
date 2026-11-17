@@ -25,3 +25,19 @@ def test_snap_carries_hook_title_and_score_from_source_proposal():
     ws = snap_to_windows([Proposal(0, 20, "A", "", 90), Proposal(40, 60, "B", "", 70)],
                          seg, 10, 30)
     assert [(w.hook_title, w.skor) for w in ws] == [("A", 90), ("B", 70)]
+
+
+def test_snap_keeps_requested_length_when_sentence_end_would_halve_it():
+    # kalimat terakhir melewati max_s: akhir kalimat terdekat (detik 30) membuang separuh
+    # pilihan 0-57. Hasil harus tetap ~57 dtk (batas segmen), bukan 30 dtk.
+    seg = [Segment(0, 30, "Kalimat pertama selesai."), Segment(30, 57, "kalimat kedua panjang"),
+           Segment(57, 70, "baru berakhir di sini.")]
+    w = snap_to_windows([Proposal(0, 57, "x", "", 50)], seg, min_s=5, max_s=60)
+    assert (w[0].start, w[0].end) == (0, 57)
+
+
+def test_snap_still_prefers_sentence_end_when_trim_is_small():
+    seg = [Segment(0, 50, "Kalimat panjang selesai."), Segment(50, 57, "lalu penggalan"),
+           Segment(57, 70, "baru berakhir.")]
+    w = snap_to_windows([Proposal(0, 57, "x", "", 50)], seg, min_s=5, max_s=60)
+    assert w[0].end == 50                           # pangkas 12% -> akhir kalimat menang

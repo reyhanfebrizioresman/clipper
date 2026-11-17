@@ -38,7 +38,8 @@ Alur yang disarankan:
 2. fetch_source(url_atau_path): unduh + transkrip (subtitle bawaan, atau Whisper di CPU,
    bisa beberapa menit). Hasilnya di-cache; panggil ulang itu instan.
 3. Baca isi: get_transcript (per halaman) dan/atau list_candidate_windows (potongan yang
-   sudah mulai/selesai di batas kalimat, plus skor kata kunci).
+   mulai di awal kalimat, plus skor kata kunci; akhir_kalimat=false berarti
+   potongan berhenti di tengah kalimat karena batas durasi).
 4. Kamu yang memilih momen terbaik sesuai angle & larangan brief, tulis hook_title yang
    jujur (bukan clickbait menyesatkan, tidak menyerang orang/brand), lalu render_clips.
    Waktu pilihan otomatis ditempel ke kalimat utuh dalam batas durasi campaign.
@@ -162,7 +163,7 @@ def list_candidate_windows(source_id: str, campaign: str, min_s: float | None = 
                            max_s: float | None = None, maks_durasi: float = 60.0,
                            urut: Literal["waktu", "skor"] = "waktu",
                            offset: int = 0, limit: int = 30) -> dict[str, Any]:
-    """Potongan kandidat yang mulai & selesai di batas kalimat, dalam batas durasi campaign
+    """Potongan kandidat yang mulai di awal kalimat (akhir_kalimat: juga selesai di akhir kalimat), dalam batas durasi campaign
     (default dibatasi maks_durasi 60 dtk, disukai TikTok/Reels). skor_kata_kunci = jumlah
     kemunculan keywords brief. Ini bahan menalar, bukan keputusan akhir."""
     return svc().list_candidate_windows(source_id, campaign, min_s=min_s, max_s=max_s,

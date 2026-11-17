@@ -89,10 +89,20 @@ def hook(window: Window, min_kata: int = 5, koreksi: dict | None = None) -> str:
             return bersih
     return rapikan(window.text)[:120] or "(tanpa teks)"
 
+# Akhir kalimat boleh memendekkan pilihan, tapi tidak sampai membuang lebih dari ini
+# dari durasi yang diminta; lebih dari itu, akhiri di batas segmen terdekat.
+MAKS_PANGKAS = 0.4
+
+
 def snap_to_windows(props, segmen: list[Segment], min_s: float, max_s: float) -> list[Window]:
     """Tempel usulan LLM ke batas kalimat: mulai di awal kalimat terdekat
     sebelum/di proposal.start, berakhir di akhir segmen (diutamakan akhir
-    kalimat) yang mencakup proposal.end dan menjaga durasi dalam [min_s, max_s]."""
+    kalimat) yang mencakup proposal.end dan menjaga durasi dalam [min_s, max_s].
+
+    Bila akhir kalimat yang muat membuang lebih dari MAKS_PANGKAS durasi yang diminta
+    (kalimat panjang melewati max_s), potongan diakhiri di batas segmen terdekat
+    dengan proposal.end: hasil render harus sama dengan yang dipratinjau, bukan
+    terpangkas diam-diam jadi separuhnya."""
     hasil: list[Window] = []
     terlihat: set[tuple[float, float]] = set()
     akhir = penanda_akhir(segmen)
@@ -111,13 +121,13 @@ def snap_to_windows(props, segmen: list[Segment], min_s: float, max_s: float) ->
         if not kandidat:
             continue
         akhir_kalimat = [k for k in kandidat if akhir[k]]
-        pilih = None
-        for k in (akhir_kalimat or kandidat):
-            if segmen[k].end >= p.end:
-                pilih = k
-                break
+        pilih = next((k for k in akhir_kalimat if segmen[k].end >= p.end), None)
+        if pilih is None and akhir_kalimat:
+            diminta = max(p.end - mulai, 1e-6)
+            if (segmen[akhir_kalimat[-1]].end - mulai) / diminta >= 1 - MAKS_PANGKAS:
+                pilih = akhir_kalimat[-1]
         if pilih is None:
-            pilih = (akhir_kalimat or kandidat)[-1]
+            pilih = next((k for k in kandidat if segmen[k].end >= p.end), kandidat[-1])
         dipakai = segmen[i:pilih + 1]
         kunci = (dipakai[0].start, dipakai[-1].end)
         if kunci in terlihat:

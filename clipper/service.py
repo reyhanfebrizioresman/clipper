@@ -362,7 +362,9 @@ class ClipperService:
                                urut: str = "waktu", offset: int = 0, limit: int = 30) -> dict:
         c = self.load_campaign(slug)
         lo, hi = self._batas(c, min_s, max_s, maks_durasi)
-        jendela = select.build_windows(self.segments(source_id), lo, hi)
+        segmen = self.segments(source_id)
+        jendela = select.build_windows(segmen, lo, hi)
+        akhir = dict(zip(map(id, segmen), select.penanda_akhir(segmen)))
         kunci = [k.lower() for k in c.keywords]
         isi = []
         for w in jendela:
@@ -370,6 +372,9 @@ class ClipperService:
             isi.append({"start": round(w.start, 2), "end": round(w.end, 2),
                         "durasi": round(w.end - w.start, 1), "rentang": f"{_mmss(w.start)}-{_mmss(w.end)}",
                         "skor_kata_kunci": sum(teks.count(k) for k in kunci),
+                        # False: kalimat terakhir lebih panjang dari batas durasi, jadi
+                        # potongan ini berhenti di tengah kalimat
+                        "akhir_kalimat": akhir.get(id(w.segments[-1]), True),
                         "teks": w.text})
         if urut == "skor":
             isi.sort(key=lambda x: (-x["skor_kata_kunci"], x["start"]))

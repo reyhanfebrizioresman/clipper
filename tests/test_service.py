@@ -148,3 +148,11 @@ def test_http_mode_refuses_non_loopback_host():
     from clipper import mcp_server
     with pytest.raises(SystemExit):
         mcp_server.main(["--http", "--host", "0.0.0.0"])
+
+
+def test_candidate_windows_flag_sentence_end(svc):
+    sid = svc.fetch_source(str(svc._video))["source_id"]
+    k = svc.list_candidate_windows(sid, "uji", min_s=4, max_s=8)["kandidat"]
+    assert all("akhir_kalimat" in x for x in k)
+    # 6-12 dtk: "Ini bagian penting yang jarang dibahas orang." -> akhir kalimat
+    assert any(x["akhir_kalimat"] for x in k)

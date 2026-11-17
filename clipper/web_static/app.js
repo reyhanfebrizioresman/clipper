@@ -352,11 +352,12 @@ async function halamanStudio(sid) {
     if (!campaign) { $("#daftar-kandidat").innerHTML = `<p class="kosong">Buat campaign dulu di menu Campaign.</p>`; return; }
     const r = await api(`/api/sources/${sid}/candidates?campaign=${encodeURIComponent(campaign)}&urut=${$("#urut").value}&maks_durasi=${encodeURIComponent($("#maks").value || 60)}`);
     kandidat = r.kandidat;
-    $("#info-kandidat").textContent = `${r.total} potongan ${r.durasi_s[0]}–${r.durasi_s[1]} dtk, mulai & selesai di batas kalimat`;
+    $("#info-kandidat").textContent = `${r.total} potongan ${r.durasi_s[0]}–${r.durasi_s[1]} dtk, mulai di awal kalimat`;
     $("#daftar-kandidat").innerHTML = kandidat.length ? kandidat.map((k, i) => `
       <div class="kandidat" data-i="${i}">
         <div class="baris renggang"><strong>${esc(k.rentang)}</strong>
-          <span class="baris"><span class="lencana">${k.durasi} dtk</span>${k.skor_kata_kunci ? `<span class="lencana ok">skor ${k.skor_kata_kunci}</span>` : ""}</span></div>
+          <span class="baris">${k.akhir_kalimat === false ? `<span class="lencana jalan" title="Kalimat terakhir lebih panjang dari batas durasi; geser akhir atau naikkan durasi maks">berhenti di tengah kalimat</span>` : ""}
+          <span class="lencana">${k.durasi} dtk</span>${k.skor_kata_kunci ? `<span class="lencana ok">skor ${k.skor_kata_kunci}</span>` : ""}</span></div>
         <p>${esc(k.teks)}</p>
         <div class="baris"><button type="button" data-aksi="putar">▶ Pratinjau</button>
           <button type="button" data-aksi="pilih">+ Pilih</button>

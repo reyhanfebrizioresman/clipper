@@ -172,7 +172,7 @@ def process(c: Campaign, video: Path, segmen: list[Segment], klip_dir: Path, *,
         mentah = klip_dir / f"{nama}-raw.mp4"
         srt = klip_dir / f"{nama}.srt"
         final = klip_dir / f"{nama}.mp4"
-        lapor("render", nama=nama, rank=n, durasi=w.end - w.start)
+        lapor("render", nama=nama, rank=n, durasi=round(w.end - w.start, 1))
         fg = reframe_planner(video, w) if reframe_planner else None
         run(render.cut_cmd(video, w.start, w.end, mentah, filtergraph=fg))
         render.write_srt(w, srt, koreksi=c.koreksi)
