@@ -3,34 +3,46 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f8f9fb">
+<meta name="description" content="Workspace untuk memilih momen, membuat klip vertikal, dan mengelola kontenmu.">
 <title>Clipper Studio</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='12' fill='%23e65b48'/%3E%3Cpath d='m15 11 13 9-13 9z' fill='white'/%3E%3C/svg%3E">
+<script>try{const t=JSON.parse(localStorage.getItem('tema'));if(t==='terang'||t==='gelap')document.documentElement.dataset.theme=t==='terang'?'light':'dark'}catch(_){}</script>
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-<header class="atas">
-  <a class="merek" href="#/">✂ Clipper Studio</a>
-  <nav>
-    <a href="#/" data-nav="beranda">Sumber</a>
-    <a href="#/klip" data-nav="klip">Pustaka klip</a>
-    <a href="#/campaign" data-nav="campaign">Campaign</a>
-    <a href="#/pengaturan" data-nav="pengaturan">Pengaturan</a>
+<a class="lewati" href="#isi">Langsung ke konten</a>
+<aside class="sidebar" aria-label="Workspace">
+  <a class="merek" href="#/" aria-label="Clipper Studio, beranda">
+    <span class="logo"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 5 10 7-10 7V5Z" fill="currentColor"/><path d="M4 5v14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg></span>
+    <span>clipper<span class="merek-studio">STUDIO</span></span>
+  </a>
+  <div class="nav-label">WORKSPACE</div>
+  <nav class="navigasi" aria-label="Navigasi utama">
+    <a href="#/" data-nav="beranda"><span data-icon="video"></span><span>Sumber video</span></a>
+    <a href="#/klip" data-nav="klip"><span data-icon="grid"></span><span>Pustaka klip</span></a>
+    <a href="#/campaign" data-nav="campaign"><span data-icon="folder"></span><span>Campaign</span></a>
+    <a href="#/pengaturan" data-nav="pengaturan" class="nav-pengaturan"><span data-icon="settings"></span><span>Pengaturan</span></a>
   </nav>
-  <button id="tombol-tema" class="tombol-tema" type="button" title="Ganti tema">◐ Otomatis</button>
-  <button id="tombol-job" class="tombol-job" type="button" aria-expanded="false">
-    <span id="titik-job" class="titik"></span><span id="label-job">Job</span>
-  </button>
+  <div class="sidebar-bawah">
+    <div class="studio-note"><span data-icon="scissors"></span><strong>Setiap momen berarti.</strong><p>Pilih ceritanya.<br>Buat jadi klip.</p><span class="rasio">9:16 <span>untuk layar vertikal</span></span></div>
+    <div class="workspace-id"><span class="avatar">C</span><span><strong>Workspace pribadi</strong><small>Clipper Studio</small></span><span class="indikator" title="Workspace lokal"></span></div>
+  </div>
+</aside>
+<header class="atas">
+  <div class="jejak"><span>Workspace</span><span class="pemisah">/</span><strong id="judul-rute">Sumber video</strong></div>
+  <div class="aksi-atas">
+    <button id="tombol-tema" class="tombol-tema" type="button" title="Ganti tema">Otomatis</button>
+    <button id="tombol-job" class="tombol-job" type="button" aria-expanded="false" aria-controls="panel-job"><span data-icon="activity"></span><span id="label-job">Job</span><span id="titik-job" class="titik"></span></button>
+  </div>
 </header>
-
-<aside id="panel-job" class="panel-job" hidden>
-  <div class="panel-kepala"><strong>Job</strong>
-    <button type="button" class="ikon" id="tutup-job" aria-label="Tutup">✕</button></div>
+<aside id="panel-job" class="panel-job" hidden aria-label="Aktivitas job">
+  <div class="panel-kepala"><div><span class="eyebrow">AKTIVITAS</span><h2>Proses di studio</h2></div><button type="button" class="ikon" id="tutup-job" aria-label="Tutup panel job"><span data-icon="close"></span></button></div>
   <div id="daftar-job"></div>
 </aside>
-
-<main id="isi"></main>
-<footer id="versi" class="kaki redup kecil"></footer>
+<main id="isi" tabindex="-1"></main>
+<footer class="kaki"><span>Ruang kecil untuk cerita besar.</span><span id="versi"></span></footer>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
-
 <script src="/static/app.js"></script>
 </body>
 </html>

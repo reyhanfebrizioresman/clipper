@@ -13,6 +13,73 @@ const mmss = (d) => {
 const simpanLokal = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} };
 const bacaLokal = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (_) { return d; } };
 
+// Ikon lokal: antarmuka tetap lengkap tanpa CDN atau font eksternal.
+const IKON = {
+  video: '<rect x="3" y="5" width="13" height="14" rx="3"/><path d="m16 10 5-3v10l-5-3"/>',
+  grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+  folder: '<path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/>',
+  settings: '<path d="M4 7h9m4 0h3M4 17h3m4 0h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+  scissors: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="m8.2 8.2 12 12M8.2 15.8 20 4M14 10l-2 2"/>',
+  activity: '<path d="M3 12h4l3-8 4 16 3-8h4"/>',
+  close: '<path d="m6 6 12 12M6 18 18 6"/>',
+  arrow: '<path d="M5 12h14m-5-5 5 5-5 5"/>',
+  back: '<path d="M19 12H5m5-5-5 5 5 5"/>',
+  link: '<path d="m10 13 4-4m-6 6-1 1a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0m0 6 1-1a4 4 0 0 1 6 6l-5 5a4 4 0 0 1-6 0" transform="translate(2 0)"/>',
+  upload: '<path d="M12 16V3m-5 5 5-5 5 5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>',
+  search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
+  refresh: '<path d="M20 8a8 8 0 1 0 0 8M20 3v5h-5"/>',
+  check: '<path d="m5 12 4 4L19 6"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>',
+  moon: '<path d="M20 15A9 9 0 0 1 9 4a9 9 0 1 0 11 11Z"/>',
+  auto: '<circle cx="12" cy="12" r="9"/><path d="M12 3v18M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none"/>',
+};
+const ikon = (nama) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IKON[nama] || IKON.video}</svg>`;
+document.querySelectorAll("[data-icon]").forEach((el) => { el.innerHTML = ikon(el.dataset.icon); });
+$(".lewati").onclick = (e) => { e.preventDefault(); isi.focus(); isi.scrollIntoView({ block: "start" }); };
+const kosong = (nama, judul, ket, aksi = "") => `<div class="kosong">${ikon(nama)}<strong>${esc(judul)}</strong><p>${esc(ket)}</p>${aksi}</div>`;
+function namaSumber(asal) {
+  try {
+    const u = new URL(asal);
+    const host = u.hostname.replace(/^www\./, "");
+    if (host === "youtu.be" || host === "youtube.com" || host.endsWith(".youtube.com")) {
+      const id = u.searchParams.get("v") || u.pathname.split("/").filter(Boolean).pop();
+      return `Video YouTube${id ? ` · ${id}` : ""}`;
+    }
+    return `Video dari ${host}`;
+  } catch (_) { return String(asal || "Video tanpa judul").split(/[\\/]/).pop(); }
+}
+function siapkanTab() {
+  isi.querySelectorAll('[role="tablist"]').forEach((list, n) => {
+    const tabs = [...list.querySelectorAll("button")];
+    const sinkron = () => tabs.forEach((b) => {
+      const aktif = b.classList.contains("aktif");
+      b.setAttribute("aria-selected", String(aktif));
+      b.tabIndex = aktif ? 0 : -1;
+    });
+    tabs.forEach((b, i) => {
+      b.setAttribute("role", "tab");
+      b.id ||= `tab-${n}-${i}`;
+      const key = b.dataset.mode || b.dataset.tab;
+      const panel = isi.querySelector(`[data-bagian="${key}"], [data-isi="${key}"]`);
+      if (panel) {
+        panel.id ||= `panel-${n}-${i}`;
+        panel.setAttribute("role", "tabpanel");
+        panel.setAttribute("aria-labelledby", b.id);
+        b.setAttribute("aria-controls", panel.id);
+      }
+      b.addEventListener("click", sinkron);
+      b.addEventListener("keydown", (e) => {
+        const j = e.key === "ArrowRight" ? (i + 1) % tabs.length : e.key === "ArrowLeft" ? (i + tabs.length - 1) % tabs.length : e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : -1;
+        if (j < 0) return;
+        e.preventDefault(); tabs[j].focus(); tabs[j].click();
+      });
+    });
+    sinkron();
+  });
+}
+
 async function api(path, opt = {}) {
   const o = { ...opt, headers: { ...(opt.headers || {}) } };
   if (o.method && o.method !== "GET") o.headers["X-Clipper"] = "1";
@@ -91,7 +158,14 @@ $("#tombol-job").onclick = () => {
   p.hidden = !p.hidden;
   $("#tombol-job").setAttribute("aria-expanded", String(!p.hidden));
 };
-$("#tutup-job").onclick = () => { $("#panel-job").hidden = true; };
+function tutupJob(kembali = false) {
+  $("#panel-job").hidden = true;
+  $("#tombol-job").setAttribute("aria-expanded", "false");
+  if (kembali) $("#tombol-job").focus();
+}
+$("#tutup-job").onclick = () => tutupJob(true);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#panel-job").hidden) tutupJob(true); });
+document.addEventListener("click", (e) => { if (!e.target.closest("#panel-job, #tombol-job")) tutupJob(); });
 $("#daftar-job").onclick = async (e) => {
   const id = e.target.dataset.batal;
   if (!id) return;
@@ -115,8 +189,19 @@ async function jalankanRute() {
   for (const [re, fn, nav] of rute) {
     const m = h.match(re);
     if (!m) continue;
-    document.querySelectorAll("[data-nav]").forEach((a) => a.classList.toggle("aktif", a.dataset.nav === nav));
-    try { await fn(...m.slice(1)); } catch (e) { isi.innerHTML = `<div class="kartu">${esc(e.message)}</div>`; }
+    document.querySelectorAll("[data-nav]").forEach((a) => {
+      a.classList.toggle("aktif", a.dataset.nav === nav);
+      if (a.dataset.nav === nav) a.setAttribute("aria-current", "page");
+      else a.removeAttribute("aria-current");
+    });
+    const judul = h.startsWith("#/studio/") ? "Studio editor" : { beranda: "Sumber video", klip: "Pustaka klip", campaign: "Campaign", pengaturan: "Pengaturan" }[nav];
+    $("#judul-rute").textContent = judul;
+    document.title = `${judul} · Clipper Studio`;
+    tutupJob();
+    try { await fn(...m.slice(1)); siapkanTab(); } catch (e) {
+      isi.innerHTML = `<div class="kartu">${kosong("info", "Halaman belum dapat dimuat", e.message, '<button type="button" id="coba-lagi">Coba lagi</button>')}</div>`;
+      $("#coba-lagi").onclick = jalankanRute;
+    }
     return;
   }
   location.hash = "#/";
@@ -126,32 +211,47 @@ window.addEventListener("hashchange", jalankanRute);
 // -------------------------------------------------------------- beranda
 async function halamanBeranda() {
   isi.innerHTML = `
+  <div class="halaman-kepala">
+    <div><span class="eyebrow">YOUR CREATIVE WORKSPACE</span><h1>Video panjang, cerita baru.</h1>
+      <p>Temukan momen terbaik. Ubah jadi klip yang siap dibagikan.</p></div>
+    <a class="tombol" href="#/klip">Lihat pustaka ${ikon("arrow")}</a>
+  </div>
   <div class="tumpuk">
-    <section id="dasbor" class="dasbor" aria-label="Ringkasan"></section>
-    <section class="kartu">
-      <h1>Sumber baru</h1>
-      <p class="redup kecil">Unduh dari URL (YouTube dsb.) atau unggah video. Transkrip memakai subtitle bawaan bila ada, kalau tidak Whisper (beberapa menit).</p>
-      <div class="tab" role="tablist">
-        <button type="button" class="aktif" data-mode="url">URL</button>
-        <button type="button" data-mode="file">Unggah file</button>
-      </div>
-      <form id="form-sumber">
-        <div class="medan" data-bagian="url"><label for="url">URL video</label>
-          <input id="url" type="url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off"></div>
-        <div class="medan" data-bagian="file" hidden><label for="berkas">File video (.mp4, .mov, .mkv, .webm)</label>
-          <input id="berkas" type="file" accept="video/*"></div>
-        <div class="baris">
-          <select id="bahasa" aria-label="Bahasa">
-            <option value="">Bahasa: otomatis</option><option value="id">Indonesia</option><option value="en">Inggris</option>
-          </select>
-          <label class="cek"><input id="paksa" type="checkbox"> Paksa Whisper (abaikan subtitle)</label>
-          <button class="utama" type="submit" id="kirim-sumber">Ambil</button>
+    <section id="dasbor" class="dasbor" aria-label="Ringkasan workspace"></section>
+    <div class="mulai-grid">
+      <section class="kartu sumber-baru">
+        <div class="judul-seksi"><span class="nomor-seksi">01</span><h2>Mulai dari satu video</h2></div>
+        <p>Tempel tautan atau unggah video untuk memulai cerita berikutnya.</p>
+        <div class="tab" role="tablist" aria-label="Cara menambahkan sumber">
+          <button type="button" class="aktif" data-mode="url">${ikon("link")} Tautan video</button>
+          <button type="button" data-mode="file">${ikon("upload")} Unggah file</button>
         </div>
-      </form>
-    </section>
+        <form id="form-sumber">
+          <div class="medan" data-bagian="url"><label for="url">Tautan video</label>
+            <div class="input-ikon">${ikon("link")}<input id="url" type="url" placeholder="Tempel tautan YouTube atau video lainnya…" autocomplete="off"></div></div>
+          <div class="medan" data-bagian="file" hidden>
+            <label for="berkas" class="dropzone" id="dropzone">${ikon("upload")}<strong id="nama-berkas">Tarik video ke sini, atau pilih file</strong><small>MP4, MOV, MKV, WEBM · video asli untuk hasil terbaik</small></label>
+            <input id="berkas" type="file" accept="video/*,.mp4,.mov,.mkv,.webm" aria-label="Pilih file video">
+          </div>
+          <div class="baris renggang sumber-submit"><span class="catatan-sumber">${ikon("info")} Transkrip dibuat otomatis setelah video ditambahkan.</span>
+            <button class="utama" type="submit" id="kirim-sumber">Proses video ${ikon("arrow")}</button></div>
+          <details class="opsi-sumber"><summary>Opsi transkrip</summary><div class="baris">
+            <select id="bahasa" aria-label="Bahasa transkrip"><option value="">Bahasa: otomatis</option><option value="id">Indonesia</option><option value="en">Inggris</option></select>
+            <label class="cek"><input id="paksa" type="checkbox"> Gunakan Whisper, abaikan subtitle bawaan</label>
+          </div></details>
+        </form>
+      </section>
+      <aside class="alur" aria-label="Alur membuat klip"><span class="eyebrow">DARI SUMBER KE LAYAR</span><h2>Tiga langkah.<br>Banyak kemungkinan.</h2>
+        <div class="langkah"><span>01</span><div><strong>Tambahkan video</strong><p>Dari tautan atau rekamanmu sendiri.</p></div></div>
+        <div class="langkah"><span>02</span><div><strong>Temukan momennya</strong><p>Pilih kandidat atau tandai di studio.</p></div></div>
+        <div class="langkah"><span>03</span><div><strong>Buat & bagikan</strong><p>Render klip vertikal, unduh, lalu unggah.</p></div></div>
+      </aside>
+    </div>
     <section class="kartu">
-      <div class="baris renggang"><h2>Sumber</h2><button type="button" id="muat-ulang">Muat ulang</button></div>
-      <div id="daftar-sumber" class="redup">Memuat…</div>
+      <div class="baris renggang sumber-kepala"><div class="judul-seksi"><h2>Video sumbermu</h2><span class="lencana" id="jumlah-sumber">…</span></div>
+        <div class="sumber-aksi"><div class="input-ikon cari-sumber">${ikon("search")}<input id="cari-sumber" type="search" placeholder="Cari video sumber…" aria-label="Cari video sumber"></div>
+          <button type="button" id="muat-ulang" title="Muat ulang sumber" aria-label="Muat ulang sumber">${ikon("refresh")}</button></div></div>
+      <div id="daftar-sumber" class="daftar-sumber" aria-live="polite"><p class="kosong">Memuat video sumber…</p></div>
     </section>
   </div>`;
 
@@ -160,30 +260,57 @@ async function halamanBeranda() {
     mode = b.dataset.mode;
     isi.querySelectorAll("[data-mode]").forEach((x) => x.classList.toggle("aktif", x === b));
     isi.querySelectorAll("[data-bagian]").forEach((x) => (x.hidden = x.dataset.bagian !== mode));
+    $("#url").disabled = mode !== "url";
+    $("#berkas").disabled = mode !== "file";
+  });
+  $("#berkas").disabled = true;
+  const berkas = $("#berkas"), dropzone = $("#dropzone");
+  const namaBerkas = () => { $("#nama-berkas").textContent = berkas.files[0]?.name || "Tarik video ke sini, atau pilih file"; };
+  berkas.onchange = namaBerkas;
+  ["dragenter", "dragover"].forEach((nama) => dropzone.addEventListener(nama, (e) => { e.preventDefault(); dropzone.classList.add("seret"); }));
+  ["dragleave", "drop"].forEach((nama) => dropzone.addEventListener(nama, (e) => { e.preventDefault(); dropzone.classList.remove("seret"); }));
+  dropzone.addEventListener("drop", (e) => {
+    const f = e.dataTransfer?.files[0];
+    if (!f) return;
+    if (!f.type.startsWith("video/") && !/\.(mp4|mov|mkv|webm|avi|m4v)$/i.test(f.name)) return toast("Pilih file video", true);
+    const dt = new DataTransfer(); dt.items.add(f); berkas.files = dt.files; namaBerkas();
   });
 
+  let sumber = [];
+  function gambarSumber() {
+    const q = $("#cari-sumber").value.trim().toLowerCase();
+    const tampil = sumber.filter((x) => `${x.asal} ${namaSumber(x.asal)}`.toLowerCase().includes(q));
+    $("#jumlah-sumber").textContent = sumber.length;
+    $("#daftar-sumber").innerHTML = tampil.length ? tampil.map((x) => `
+      <article class="sumber-row"><div class="sumber-identitas"><span class="sumber-ikon">${ikon("video")}</span><div><strong title="${esc(x.asal)}">${esc(namaSumber(x.asal))}</strong><p title="${esc(x.asal)}">${esc(x.asal)}</p><p class="sumber-ringkas">${mmss(x.durasi_s)} · ${x.jumlah_segmen} segmen</p></div></div>
+        <div class="sumber-meta">${mmss(x.durasi_s)}<small>durasi video</small></div>
+        <div class="sumber-meta sumber-transkrip"><span class="lencana ok">${ikon("check")} ${esc(x.transkrip_dari)}</span><small>${x.jumlah_segmen} segmen transkrip</small></div>
+        <a class="tombol" href="#/studio/${esc(x.source_id)}">Buka studio ${ikon("arrow")}</a></article>`).join("")
+      : kosong(q ? "search" : "video", q ? "Video belum ditemukan" : "Cerita pertamamu dimulai di sini", q ? "Coba kata kunci atau tautan lainnya." : "Tambahkan tautan atau unggah video di atas untuk mulai membuat klip.");
+  }
+  $("#cari-sumber").oninput = gambarSumber;
   async function muat() {
-    const s = await api("/api/sources");
-    $("#daftar-sumber").innerHTML = s.length ? `<table><thead><tr><th>Sumber</th><th>Durasi</th><th>Transkrip</th><th></th></tr></thead><tbody>${
-      s.map((x) => `<tr><td class="potong" title="${esc(x.asal)}">${esc(x.asal)}</td>
-        <td>${mmss(x.durasi_s)}</td><td>${esc(x.transkrip_dari)} · ${x.jumlah_segmen} segmen</td>
-        <td><a class="tombol" href="#/studio/${esc(x.source_id)}">Buka studio</a></td></tr>`).join("")
-    }</tbody></table>` : `<p class="kosong">Belum ada sumber.</p>`;
+    sumber = await api("/api/sources");
+    if ($("#daftar-sumber")) gambarSumber();
   }
   async function dasbor() {
     const r = await api("/api/ringkasan");
-    const ubin = (angka, label, href, ket = "") =>
-      `<a class="ubin" href="${href}"><strong>${esc(angka)}</strong><span>${esc(label)}</span>${ket ? `<small>${esc(ket)}</small>` : ""}</a>`;
+    if (!$("#dasbor")) return;
+    const ubin = (angka, label, href, simbol, ket = "") =>
+      `<a class="ubin" href="${href}"><div class="ubin-kepala"><span>${esc(label)}</span>${ikon(simbol)}</div><strong>${esc(angka)}</strong><small>${esc(ket)}</small></a>`;
     $("#dasbor").innerHTML = [
-      ubin(r.sumber, "Sumber", "#/"),
-      ubin(r.klip, "Klip", "#/klip", `${r.klip_mb} MB`),
-      ubin(r.per_status.baru, "Belum diunggah", "#/klip?status=baru"),
-      ubin(r.per_status.diunggah, "Diunggah", "#/klip?status=diunggah"),
-      ubin(r.per_status.disubmit, "Disubmit", "#/klip?status=disubmit"),
-      ubin(r.job_berjalan, "Job berjalan", "#/", r.disk ? `disk kosong ${r.disk.kosong_gb} GB` : ""),
+      ubin(r.sumber, "Video sumber", "#/", "video", "awal setiap cerita"),
+      ubin(r.klip, "Total klip", "#/klip", "grid", `${r.klip_mb} MB tersimpan`),
+      ubin(r.per_status.baru, "Belum diunggah", "#/klip?status=baru", "scissors", "siap langkah berikutnya"),
+      ubin(r.per_status.diunggah, "Diunggah", "#/klip?status=diunggah", "upload", "sudah dibagikan"),
+      ubin(r.per_status.disubmit, "Disubmit", "#/klip?status=disubmit", "check", "terkirim ke campaign"),
+      ubin(r.job_berjalan, "Job berjalan", "#/", "activity", r.disk ? `${r.disk.kosong_gb} GB tersedia` : "proses di studio"),
     ].join("");
   }
-  $("#muat-ulang").onclick = () => { muat().catch(gagal); dasbor().catch(() => {}); };
+  $("#muat-ulang").onclick = async () => {
+    const b = $("#muat-ulang"); b.disabled = true;
+    try { await Promise.all([muat(), dasbor()]); } catch (err) { gagal(err); } finally { b.disabled = false; }
+  };
   muat().catch(gagal);
   dasbor().catch(() => {});
 
@@ -233,8 +360,9 @@ async function halamanStudio(sid) {
   let tanda = { awal: null, akhir: null };
 
   isi.innerHTML = `
-  <div class="baris renggang" style="margin-bottom:1rem">
-    <div><h1 class="potong" title="${esc(meta.asal)}">${esc(meta.asal)}</h1>
+  <a class="breadcrumb" href="#/">${ikon("back")} Kembali ke sumber video</a>
+  <div class="halaman-kepala studio-kepala">
+    <div><span class="eyebrow">STUDIO EDITOR</span><h1 title="${esc(meta.asal)}">${esc(namaSumber(meta.asal))}</h1>
       <span class="redup kecil">${mmss(meta.durasi_s)} · transkrip ${esc(meta.transkrip_dari)} · ${meta.jumlah_segmen} segmen</span></div>
     <div class="baris"><label for="campaign" style="margin:0">Campaign</label>
       <select id="campaign">${camps.map((c) => `<option value="${esc(c.slug)}">${esc(c.nama || c.slug)}</option>`).join("")}</select></div>
@@ -253,7 +381,7 @@ async function halamanStudio(sid) {
         </div>
       </section>
       <section class="kartu">
-        <div class="tab" role="tablist">
+        <div class="tab" role="tablist" aria-label="Momen dan transkrip">
           <button type="button" class="aktif" data-tab="kandidat">Kandidat</button>
           <button type="button" data-tab="transkrip">Transkrip</button>
         </div>
@@ -265,8 +393,8 @@ async function halamanStudio(sid) {
           <div id="daftar-kandidat" class="daftar-gulir"></div>
         </div>
         <div data-isi="transkrip" hidden>
-          <input id="cari" type="search" placeholder="Cari di transkrip…" style="width:100%;margin-bottom:.5rem">
-          <div id="daftar-transkrip" class="daftar-gulir"></div>
+          <input id="cari" type="search" placeholder="Cari di transkrip…" aria-label="Cari di transkrip" style="width:100%;margin-bottom:.5rem">
+          <div id="daftar-transkrip" class="daftar-gulir" tabindex="0" role="region" aria-label="Transkrip video"></div>
         </div>
       </section>
     </div>
@@ -419,9 +547,9 @@ async function halamanStudio(sid) {
           <button type="button" class="ikon" data-aksi="putar" title="Pratinjau">▶</button>
           <button type="button" class="ikon" data-aksi="hapus" title="Hapus">✕</button></span></div>
         <div class="waktu">
-          <div><label>Awal (dtk)</label><input type="number" step="0.1" min="0" data-f="start" value="${p.start}">
+          <div><label>Awal (dtk)</label><input type="number" step="0.1" min="0" data-f="start" aria-label="Waktu awal klip dalam detik" value="${p.start}">
             <div class="geser"><button type="button" data-geser="start:-1">−1</button><button type="button" data-geser="start:1">+1</button></div></div>
-          <div><label>Akhir (dtk)</label><input type="number" step="0.1" min="0" data-f="end" value="${p.end}">
+          <div><label>Akhir (dtk)</label><input type="number" step="0.1" min="0" data-f="end" aria-label="Waktu akhir klip dalam detik" value="${p.end}">
             <div class="geser"><button type="button" data-geser="end:-1">−1</button><button type="button" data-geser="end:1">+1</button></div></div>
         </div>
         <label>Hook / judul (masuk caption)</label>
@@ -500,23 +628,38 @@ async function halamanKlip() {
   const dariTautan = new URLSearchParams(location.hash.split("?")[1] || "").get("status");
   const filterStatus = dariTautan ?? bacaLokal("filter-status", "");
   isi.innerHTML = `
-  <div class="baris renggang" style="margin-bottom:.5rem"><h1>Pustaka klip</h1>
-    <div class="baris">
-      <select id="filter" aria-label="Filter campaign"><option value="">Semua campaign</option>
-        ${CAMPAIGNS.filter((c) => c.slug).map((c) => `<option value="${esc(c.slug)}" ${c.slug === filter ? "selected" : ""}>${esc(c.nama || c.slug)}</option>`).join("")}</select>
-      <select id="filter-status" aria-label="Filter status"><option value="">Semua status</option>
-        ${Object.entries(LABEL_STATUS).map(([k, v]) => `<option value="${k}" ${k === filterStatus ? "selected" : ""}>${v}</option>`).join("")}</select>
-    </div></div>
-  <p class="redup kecil">Unggah tetap manual (aturan TikTok/IG). Ubah hook tidak perlu render ulang — hook hanya ada di caption. Render ulang memakai waktu & hook yang sama dengan gaya/pengaturan terbaru.</p>
-  <div id="grid" class="grid-klip"></div>`;
+  <div class="halaman-kepala"><div><span class="eyebrow">KOLEKSI KONTENMU</span><h1>Pustaka klip</h1>
+    <p>Momen pilihanmu, dalam satu tempat. Pratinjau, atur caption, lalu bagikan.</p></div>
+    <a class="tombol utama" href="#/">${ikon("upload")} Tambah video</a></div>
+  <div class="toolbar-klip"><div class="input-ikon">${ikon("search")}<input id="cari-klip" type="search" placeholder="Cari hook, nama klip, atau campaign…" aria-label="Cari klip"></div><span id="jumlah-klip">Memuat…</span>
+    <select id="filter" aria-label="Filter campaign"><option value="">Semua campaign</option>
+      ${CAMPAIGNS.filter((c) => c.slug).map((c) => `<option value="${esc(c.slug)}" ${c.slug === filter ? "selected" : ""}>${esc(c.nama || c.slug)}</option>`).join("")}</select>
+    <select id="filter-status" aria-label="Filter status"><option value="">Semua status</option>
+      ${Object.entries(LABEL_STATUS).map(([k, v]) => `<option value="${k}" ${k === filterStatus ? "selected" : ""}>${v}</option>`).join("")}</select>
+  </div>
+  <div id="grid" class="grid-klip"></div>
+  <p class="catatan-sumber" style="margin-top:20px">${ikon("info")} Unduh klip dan unggah manual ke platform pilihanmu. Hook dapat diubah tanpa render ulang.</p>`;
 
-  let klip = [];
-  async function muat() {
-    const f = $("#filter").value, st = $("#filter-status").value;
-    klip = (await api(`/api/clips${f ? `?campaign=${encodeURIComponent(f)}` : ""}`)).filter((k) => !st || k.status === st);
+  let klip = [], semuaKlip = [];
+  function gambarKlip() {
+    const q = $("#cari-klip").value.trim().toLowerCase(), st = $("#filter-status").value;
+    klip = semuaKlip.filter((k) => (!st || k.status === st) && `${k.hook || ""} ${k.file} ${k.campaign}`.toLowerCase().includes(q));
+    $("#jumlah-klip").textContent = `${klip.length} klip`;
+    const terfilter = q || $("#filter").value || st;
     $("#grid").innerHTML = klip.length ? klip.map((k, i) => kartuKlip(k, i)).join("")
-      : `<p class="kosong">Belum ada klip${f || st ? " untuk filter ini" : ""}.</p>`;
+      : kosong(terfilter ? "search" : "scissors", terfilter ? "Belum ada klip yang cocok" : "Pustakamu siap diisi", terfilter ? "Coba kata kunci lain atau ubah filter campaign dan status." : "Pilih momen di studio, lalu render klip pertamamu.", terfilter ? '<button type="button" id="reset-filter">Hapus filter</button>' : '<a class="tombol utama" href="#/">Tambah video</a>');
+    if ($("#reset-filter")) $("#reset-filter").onclick = () => {
+      $("#cari-klip").value = ""; $("#filter").value = ""; $("#filter-status").value = "";
+      simpanLokal("filter-klip", ""); simpanLokal("filter-status", "");
+      muat().catch(gagal);
+    };
   }
+  async function muat() {
+    const f = $("#filter").value;
+    semuaKlip = await api(`/api/clips${f ? `?campaign=${encodeURIComponent(f)}` : ""}`);
+    if ($("#grid")) gambarKlip();
+  }
+  $("#cari-klip").oninput = gambarKlip;
 
   function kartuKlip(k, i) {
     const u = klipUrl(k);
@@ -551,12 +694,12 @@ async function halamanKlip() {
         <button type="button" class="ikon" data-salin="${j}">Salin</button></div>
         <pre>${esc(x.caption)}</pre><div class="redup kecil">maks ${x.maks_durasi} dtk · ${esc(x.catatan)}</div></div>`).join("") || "<p class='redup'>Tidak ada caption.</p>";
     } else if (jenis === "edit") {
-      p.innerHTML = `<label>Hook (baris pertama caption)</label><textarea rows="3" maxlength="500" data-f="hook">${esc(k.hook || "")}</textarea>
+      p.innerHTML = `<label>Hook (baris pertama caption)</label><textarea rows="3" maxlength="500" data-f="hook" aria-label="Hook klip">${esc(k.hook || "")}</textarea>
         <label style="margin-top:.5rem">Tautan postingan</label><input type="url" data-f="tautan" value="${esc(k.tautan || "")}" placeholder="https://www.tiktok.com/@akun/video/…" style="width:100%">
         <div class="baris" style="margin-top:.5rem"><button type="button" class="utama" data-aksi="simpan-edit">Simpan</button></div>`;
     } else if (jenis === "ulang") {
       p.innerHTML = `<div class="grid-form">
-        <div class="medan"><label>Gaya subtitle</label><select data-f="gaya">${INFO.gaya.map((g) => `<option ${g === (INFO.gaya.includes(k.gaya) ? k.gaya : INFO.gaya_bawaan) ? "selected" : ""}>${esc(g)}</option>`).join("")}</select></div></div>
+        <div class="medan"><label>Gaya subtitle</label><select data-f="gaya" aria-label="Gaya subtitle untuk render ulang">${INFO.gaya.map((g) => `<option ${g === (INFO.gaya.includes(k.gaya) ? k.gaya : INFO.gaya_bawaan) ? "selected" : ""}>${esc(g)}</option>`).join("")}</select></div></div>
         <label class="cek medan"><input type="checkbox" data-f="reframe" ${INFO.reframe_bawaan ? "checked" : ""}> Reframe ikut wajah</label>
         <p class="redup kecil">Menimpa ${esc(k.file)}; status & tautan dipertahankan. Kualitas/encode mengikuti Pengaturan saat ini.</p>
         <button type="button" class="utama" data-aksi="mulai-ulang">Render ulang</button>`;
@@ -609,11 +752,12 @@ async function halamanKlip() {
       await api(`/api/clips/${klipUrl(k)}`, { method: "PATCH", json: { status: e.target.value } });
       k.status = e.target.value;
       e.target.className = `status-${k.status}`;
+      if ($("#filter-status").value) gambarKlip();
       toast(`Status: ${LABEL_STATUS[k.status]}`);
     } catch (err) { gagal(err); e.target.value = k.status; }
   };
   $("#filter").onchange = () => { simpanLokal("filter-klip", $("#filter").value); muat().catch(gagal); };
-  $("#filter-status").onchange = () => { simpanLokal("filter-status", $("#filter-status").value); muat().catch(gagal); };
+  $("#filter-status").onchange = () => { simpanLokal("filter-status", $("#filter-status").value); gambarKlip(); };
   SELESAI_JOB.push((j) => { if (j.jenis !== "fetch_source") muat().catch(() => {}); });
   await muat();
 }
@@ -631,6 +775,8 @@ async function halamanCampaign(slug) {
     : await api(`/api/campaigns/${slug}`);
 
   isi.innerHTML = `
+  <div class="halaman-kepala"><div><span class="eyebrow">ARAH UNTUK SETIAP CERITA</span><h1>Campaign</h1><p>Atur brief, kata kunci, dan aturan konten sebelum mulai membuat klip.</p></div>
+    <a class="tombol" href="#/campaign/baru">+ Campaign baru</a></div>
   <div class="dua-kolom">
     <section class="kartu daftar-campaign">
       ${CAMPAIGNS.map((c) => c.slug ? `<a href="#/campaign/${esc(c.slug)}" class="${c.slug === slug ? "aktif" : ""}">${esc(c.nama || c.slug)}<br><span class="redup kecil">${esc(c.slug)}</span></a>`
@@ -638,7 +784,7 @@ async function halamanCampaign(slug) {
       <a href="#/campaign/baru" class="${baru ? "aktif" : ""}">+ Campaign baru</a>
     </section>
     <form class="kartu" id="form-campaign">
-      <h1>${baru ? "Campaign baru" : esc(brief.nama || brief.slug)}</h1>
+      <h2>${baru ? "Campaign baru" : esc(brief.nama || brief.slug)}</h2>
       <div class="grid-form">
         <div class="medan"><label for="f-slug">Slug (huruf kecil, angka, -)</label><input id="f-slug" name="slug" required pattern="[a-z0-9][a-z0-9-]{0,63}" ${baru ? "" : "readonly"}></div>
         <div class="medan"><label for="f-nama">Nama</label><input id="f-nama" name="nama" required></div>
@@ -757,9 +903,9 @@ async function halamanPengaturan() {
   for (const [k, a] of Object.entries(d.skema)) (kelompok[a.kelompok] ||= []).push(k);
 
   isi.innerHTML = `
-  <div class="baris renggang" style="margin-bottom:1rem"><div><h1>Pengaturan</h1>
-    <span class="redup kecil">Berlaku untuk job berikutnya di web UI, MCP, dan CLI — tanpa restart. Disimpan di <code>${esc(d.file)}</code>.</span></div>
-    <button type="button" class="utama" id="simpan-set">Simpan</button></div>
+  <div class="halaman-kepala"><div><span class="eyebrow">SESUAI CARA KERJAMU</span><h1>Pengaturan</h1>
+    <p>Atur proses video, tampilan subtitle, dan format klip. Berlaku untuk proses berikutnya.</p></div>
+    <button type="button" class="utama" id="simpan-set">${ikon("check")} Simpan perubahan</button></div>
   <datalist id="daftar-font">${fonts.map((f) => `<option value="${esc(f)}">`).join("")}</datalist>
   <div class="tumpuk" id="form-set">
     ${Object.entries(kelompok).map(([nama, kunci]) => `
@@ -771,12 +917,12 @@ async function halamanPengaturan() {
         }).join("")}
       </div></section>`).join("")}
     <section class="kartu"><div class="baris renggang"><h2>Gaya subtitle</h2>
-      <div class="baris"><input id="nama-gaya" placeholder="nama-gaya-baru" pattern="[a-z0-9][a-z0-9-]{0,29}" style="width:12rem">
+      <div class="baris"><input id="nama-gaya" aria-label="Nama gaya subtitle baru" placeholder="nama-gaya-baru" pattern="[a-z0-9][a-z0-9-]{0,29}" style="width:12rem">
       <button type="button" id="tambah-gaya">+ Tambah gaya</button></div></div>
       <p class="redup kecil">Bawaan (tidak bisa diubah): ${d.gaya_bawaan.map(esc).join(", ")}. Pratinjau hanya perkiraan; hasil akhir dirender libass di server.</p>
       <div id="daftar-gaya"></div></section>
     <section class="kartu"><div class="baris renggang"><h2>Aturan platform</h2>
-      <div class="baris"><input id="nama-platform" placeholder="mis. facebook" style="width:10rem"><button type="button" id="tambah-platform">+ Platform</button></div></div>
+      <div class="baris"><input id="nama-platform" aria-label="Nama platform baru" placeholder="mis. facebook" style="width:10rem"><button type="button" id="tambah-platform">+ Platform</button></div></div>
       <p class="redup kecil">Durasi maks & catatan safe-zone yang tampil bersama caption per platform di Pustaka klip.</p>
       <div id="daftar-platform"></div></section>
   </div>`;
@@ -818,8 +964,8 @@ async function halamanPengaturan() {
   function gambarPlatform() {
     $("#daftar-platform").innerHTML = `<table><thead><tr><th>Platform</th><th>Durasi maks (dtk)</th><th>Catatan safe-zone</th></tr></thead><tbody>${
       Object.entries(platform).map(([p, v]) => `<tr data-p="${esc(p)}"><td>${esc(p)}</td>
-        <td><input type="number" min="5" max="600" data-pf="maks_durasi" value="${esc(v.maks_durasi)}" style="width:6rem"></td>
-        <td><input type="text" maxlength="300" data-pf="catatan" value="${esc(v.catatan)}" style="width:100%"></td></tr>`).join("")
+        <td><input type="number" min="5" max="600" data-pf="maks_durasi" aria-label="Durasi maksimum ${esc(p)} dalam detik" value="${esc(v.maks_durasi)}" style="width:6rem"></td>
+        <td><input type="text" maxlength="300" data-pf="catatan" aria-label="Catatan safe-zone ${esc(p)}" value="${esc(v.catatan)}" style="width:100%"></td></tr>`).join("")
     }</tbody></table>`;
   }
   $("#daftar-platform").oninput = (e) => {
@@ -875,7 +1021,9 @@ function terapkanTema(t) {
   if (t === "terang") el.dataset.theme = "light";
   else if (t === "gelap") el.dataset.theme = "dark";
   else delete el.dataset.theme;
-  $("#tombol-tema").textContent = { otomatis: "◐ Otomatis", terang: "☀ Terang", gelap: "☾ Gelap" }[t];
+  const label = { otomatis: "Otomatis", terang: "Terang", gelap: "Gelap" }[t];
+  $("#tombol-tema").innerHTML = `${ikon({ otomatis: "auto", terang: "sun", gelap: "moon" }[t])}<span>${label}</span>`;
+  $("#tombol-tema").setAttribute("aria-label", `Tema ${label.toLowerCase()}. Klik untuk mengganti tema.`);
 }
 let temaKini = bacaLokal("tema", "otomatis");
 if (!TEMA.includes(temaKini)) temaKini = "otomatis";
@@ -888,7 +1036,7 @@ $("#tombol-tema").onclick = () => {
 function tulisVersi() {
   const v = INFO.versi || {};
   $("#versi").innerHTML = v.commit
-    ? `Clipper Studio · versi <code>${esc(v.commit)}</code> · ${esc(new Date(v.waktu).toLocaleString("id-ID"))} · ${esc(v.judul)}`
+    ? `Clipper Studio <span aria-hidden="true">·</span> <code title="${esc(v.judul)} · ${esc(new Date(v.waktu).toLocaleString("id-ID"))}">${esc(v.commit)}</code>`
     : "Clipper Studio";
 }
 
