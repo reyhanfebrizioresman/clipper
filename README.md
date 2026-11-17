@@ -60,9 +60,14 @@ Dari mesin lain lewat SSH (konfigurasi Claude Code, `~/.claude.json` → `mcpSer
 ```
 
 Tool cepat: `list_campaigns`, `get_campaign_brief`, `save_campaign_brief`, `list_sources`,
-`get_transcript`, `list_candidate_windows`, `list_clips`, `get_clip`.
+`get_transcript`, `list_candidate_windows`, `list_clips`, `get_clip`, `get_summary`.
 
-Tool job (kerja panjang): `fetch_source`, `render_clips`, `auto_clips` berjalan di latar.
+Kelola klip: `update_clip` (ubah hook/caption tanpa render, status baru/diunggah/disubmit,
+tautan postingan), `delete_clip` (wajib `konfirmasi=true`), `rerender_clip` (job).
+Pengaturan: `get_settings` / `update_settings`, sama dengan halaman Pengaturan web UI;
+API key Gemini hanya bisa diatur dari web UI supaya tidak masuk riwayat percakapan AI.
+
+Tool job (kerja panjang): `fetch_source`, `render_clips`, `auto_clips`, `rerender_clip` berjalan di latar.
 Tool menunggu paling lama `tunggu_s` (bawaan 45 dtk, aman untuk batas waktu Codex), lalu
 mengembalikan `{job_id, status}`; pantau dengan `job_status`, hentikan dengan `cancel_job`
 (ffmpeg/yt-dlp dibunuh), lihat semua dengan `list_jobs`. Job hidup selama sesi server;

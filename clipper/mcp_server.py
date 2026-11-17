@@ -45,8 +45,13 @@ Alur yang disarankan:
    Waktu pilihan otomatis ditempel ke kalimat utuh dalam batas durasi campaign.
    Alternatif tanpa menalar sendiri: auto_clips (pemilih kata kunci / Gemini engine).
 5. get_clip untuk caption per platform. Unggah tetap MANUAL (aturan TikTok/IG).
+6. Kelola klip: update_clip (ubah hook/caption tanpa render ulang, status
+   baru/diunggah/disubmit, tautan postingan), rerender_clip (render ulang ke nomor yang
+   sama dengan gaya / pengaturan terbaru), delete_clip (hanya bila pengguna memintanya).
+   get_summary = ringkasan; get_settings / update_settings = pengaturan engine yang sama
+   dengan halaman Pengaturan web UI (API key hanya bisa diatur dari web UI).
 
-Job: fetch_source, render_clips, dan auto_clips mengembalikan {job_id, status, ...}.
+Job: fetch_source, render_clips, auto_clips, dan rerender_clip mengembalikan {job_id, status, ...}.
 status 'selesai' -> hasilnya di 'hasil'. status 'berjalan' -> panggil
 job_status(job_id, tunggu_s) sampai selesai (jangan memulai job yang sama lagi);
 cancel_job untuk menghentikan. Bila klienmu sanggup menunggu lama, beri tunggu_s
@@ -185,6 +190,61 @@ def get_clip(campaign: str, source_id: str, file: str) -> dict[str, Any]:
     return svc().get_clip(campaign, source_id, file)
 
 
+@mcp.tool()
+def update_clip(campaign: str, source_id: str, file: str,
+                hook: Annotated[str | None, Field(description="hook baru (baris pertama caption); "
+                                                  "hashtag wajib ditambahkan otomatis")] = None,
+                status: Literal["baru", "diunggah", "disubmit"] | None = None,
+                tautan: Annotated[str | None, Field(description="URL postingan; '' = hapus")] = None,
+                ) -> dict[str, Any]:
+    """Ubah hook/caption (tanpa render ulang: hook hanya ada di caption .txt, tidak dibakar
+    ke video), status unggah, atau tautan postingan satu klip. Kembali: detail klip."""
+    return svc().update_clip(campaign, source_id, file, hook=hook, status=status, tautan=tautan)
+
+
+@mcp.tool()
+def delete_clip(campaign: str, source_id: str, file: str,
+                konfirmasi: Annotated[bool, Field(description="wajib true: pengguna memang "
+                                                  "meminta klip ini dihapus")] = False,
+                ) -> dict[str, Any]:
+    """Hapus satu klip (video, subtitle, caption, thumbnail) secara permanen. Panggil hanya
+    bila pengguna memintanya, dengan konfirmasi=true."""
+    if not konfirmasi:
+        raise ClipperError("penghapusan permanen: panggil lagi dengan konfirmasi=true setelah "
+                           "pengguna menyetujui")
+    return svc().delete_clip(campaign, source_id, file)
+
+
+@mcp.tool()
+def get_summary() -> dict[str, Any]:
+    """Ringkasan: jumlah sumber & klip, klip per status (baru/diunggah/disubmit) dan per
+    campaign, ukuran total, sisa disk server."""
+    return svc().ringkasan()
+
+
+@mcp.tool()
+def get_settings() -> dict[str, Any]:
+    """Pengaturan engine yang berlaku (sama dengan halaman Pengaturan web UI), skemanya
+    (pilihan & batas tiap setelan), dan setelan yang dikunci env. API key tidak ditampilkan."""
+    d = svc().get_settings()
+    return {k: d[k] for k in ("nilai", "skema", "skema_gaya", "terkunci_env", "gaya_bawaan",
+                              "platform_efektif", "tersimpan")}
+
+
+@mcp.tool()
+def update_settings(perubahan: Annotated[dict[str, Any], Field(
+        description="setelan yang diubah, mis. {\"crf\": 20, \"maks_durasi\": 90}; "
+                    "null = kembalikan ke bawaan. Kunci & batas: lihat get_settings.skema")]
+                    ) -> dict[str, Any]:
+    """Ubah pengaturan engine; berlaku di job berikutnya (web UI, MCP, CLI) tanpa restart.
+    gemini_api_key tidak bisa diubah lewat MCP: atur dari halaman Pengaturan web UI."""
+    if "gemini_api_key" in perubahan:
+        raise ClipperError("API key hanya bisa diatur dari halaman Pengaturan web UI, "
+                           "supaya tidak tersimpan di riwayat percakapan AI")
+    d = svc().save_settings(perubahan)
+    return {"nilai": d["nilai"], "tersimpan": d["tersimpan"]}
+
+
 # ------------------------------------------------------------- tool job (panjang)
 @mcp.tool()
 async def fetch_source(
@@ -232,6 +292,20 @@ async def auto_clips(source_id: str, campaign: str, jumlah: int = 5, lewati: int
     return await _mulai(ctx, "auto_clips", tunggu_s, svc().auto_clips,
                         source_id=source_id, slug=campaign, jumlah=jumlah, lewati=lewati,
                         ai=ai, gaya=gaya, reframe=reframe, maks_durasi=maks_durasi)
+
+
+@mcp.tool()
+async def rerender_clip(campaign: str, source_id: str, file: str, gaya: Gaya | None = None,
+                        reframe: bool | None = None,
+                        hook_title: Annotated[str | None, Field(description="kosong = hook lama")] = None,
+                        tunggu_s: Tunggu = TUNGGU_BAWAAN, ctx: Context = None) -> dict[str, Any]:
+    """[job] Render ulang satu klip ke nomor file yang sama: waktu sama, hook sama (kecuali
+    diganti), gaya/reframe/encode dari argumen atau pengaturan terbaru. Status & tautan
+    dipertahankan. Untuk mengganti hook saja, pakai update_clip (tanpa render)."""
+    svc().get_clip(campaign, source_id, file)          # galat cepat sebelum antre
+    return await _mulai(ctx, "render_ulang", tunggu_s, svc().rerender_clip, slug=campaign,
+                        source_id=source_id, file=file, gaya=gaya, reframe=reframe,
+                        hook_title=hook_title)
 
 
 @mcp.tool()

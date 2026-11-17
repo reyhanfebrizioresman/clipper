@@ -95,3 +95,31 @@ def test_web_manage_endpoints(svc):
     assert c.get("/api/info").json()["versi"]
     assert c.delete(url, headers=H).status_code == 200
     assert c.get("/api/clips").json() == []
+
+
+def test_mcp_manage_tools(svc, monkeypatch):
+    import anyio
+    from clipper import mcp_server as ms
+    monkeypatch.setattr(ms, "svc", lambda: svc)
+    sid, f = _satu_klip(svc)
+
+    d = ms.update_clip("uji", sid, f, hook="Hook dari MCP", status="disubmit")
+    assert d["hook"] == "Hook dari MCP" and d["status"] == "disubmit"
+    assert ms.get_summary()["per_status"]["disubmit"] == 1
+
+    async def ulang():
+        r = await ms.rerender_clip("uji", sid, f, tunggu_s=10)
+        assert r["status"] == "selesai" and r["hasil"]["klip"][0]["file"] == f
+    anyio.run(ulang)
+    assert ms.get_clip("uji", sid, f)["status"] == "disubmit"      # status bertahan
+
+    assert ms.update_settings({"crf": 21})["nilai"]["crf"] == 21
+    assert ms.get_settings()["nilai"]["crf"] == 21
+    with pytest.raises(ClipperError):
+        ms.update_settings({"gemini_api_key": "AIzaRahasia"})      # rahasia hanya lewat web UI
+    assert "Rahasia" not in json.dumps(ms.get_settings())
+
+    with pytest.raises(ClipperError):
+        ms.delete_clip("uji", sid, f)                               # tanpa konfirmasi
+    ms.delete_clip("uji", sid, f, konfirmasi=True)
+    assert ms.list_clips("uji") == []
