@@ -50,7 +50,8 @@ let pollTimer;
 const SELESAI_JOB = []; // callback(job) saat job selesai
 
 function ringkasJob(j) {
-  const nama = { fetch_source: "Ambil sumber", render_clips: "Render klip", auto_clips: "Klip otomatis" }[j.jenis] || j.jenis;
+  const nama = { fetch_source: "Ambil sumber", render_clips: "Render klip", auto_clips: "Klip otomatis",
+                 render_ulang: "Render ulang" }[j.jenis] || j.jenis;
   const kls = { selesai: "ok", gagal: "gagal", dibatalkan: "gagal", berjalan: "jalan" }[j.status] || "";
   return { nama, kls };
 }
@@ -102,7 +103,7 @@ $("#daftar-job").onclick = async (e) => {
 const rute = [
   [/^#\/?$/, halamanBeranda, "beranda"],
   [/^#\/studio\/([uf]-[0-9a-f]{12})$/, halamanStudio, "beranda"],
-  [/^#\/klip$/, halamanKlip, "klip"],
+  [/^#\/klip(?:\?.*)?$/, halamanKlip, "klip"],
   [/^#\/campaign(?:\/([a-z0-9-]+|baru))?$/, halamanCampaign, "campaign"],
   [/^#\/pengaturan$/, halamanPengaturan, "pengaturan"],
 ];
@@ -126,6 +127,7 @@ window.addEventListener("hashchange", jalankanRute);
 async function halamanBeranda() {
   isi.innerHTML = `
   <div class="tumpuk">
+    <section id="dasbor" class="dasbor" aria-label="Ringkasan"></section>
     <section class="kartu">
       <h1>Sumber baru</h1>
       <p class="redup kecil">Unduh dari URL (YouTube dsb.) atau unggah video. Transkrip memakai subtitle bawaan bila ada, kalau tidak Whisper (beberapa menit).</p>
@@ -168,10 +170,25 @@ async function halamanBeranda() {
         <td><a class="tombol" href="#/studio/${esc(x.source_id)}">Buka studio</a></td></tr>`).join("")
     }</tbody></table>` : `<p class="kosong">Belum ada sumber.</p>`;
   }
-  $("#muat-ulang").onclick = () => muat().catch(gagal);
+  async function dasbor() {
+    const r = await api("/api/ringkasan");
+    const ubin = (angka, label, href, ket = "") =>
+      `<a class="ubin" href="${href}"><strong>${esc(angka)}</strong><span>${esc(label)}</span>${ket ? `<small>${esc(ket)}</small>` : ""}</a>`;
+    $("#dasbor").innerHTML = [
+      ubin(r.sumber, "Sumber", "#/"),
+      ubin(r.klip, "Klip", "#/klip", `${r.klip_mb} MB`),
+      ubin(r.per_status.baru, "Belum diunggah", "#/klip?status=baru"),
+      ubin(r.per_status.diunggah, "Diunggah", "#/klip?status=diunggah"),
+      ubin(r.per_status.disubmit, "Disubmit", "#/klip?status=disubmit"),
+      ubin(r.job_berjalan, "Job berjalan", "#/", r.disk ? `disk kosong ${r.disk.kosong_gb} GB` : ""),
+    ].join("");
+  }
+  $("#muat-ulang").onclick = () => { muat().catch(gagal); dasbor().catch(() => {}); };
   muat().catch(gagal);
+  dasbor().catch(() => {});
 
   SELESAI_JOB.push((j) => {
+    dasbor().catch(() => {});
     if (j.jenis !== "fetch_source") return;
     muat().catch(() => {});
     if (j.status === "selesai" && j.hasil?.source_id) location.hash = `#/studio/${j.hasil.source_id}`;
@@ -475,53 +492,128 @@ async function halamanStudio(sid) {
 }
 
 // ---------------------------------------------------------------- klip
+const LABEL_STATUS = { baru: "Baru", diunggah: "Diunggah", disubmit: "Disubmit" };
+const klipUrl = (k) => `${encodeURIComponent(k.campaign)}/${encodeURIComponent(k.source_id)}/${encodeURIComponent(k.file)}`;
+
 async function halamanKlip() {
   const filter = bacaLokal("filter-klip", "");
+  const dariTautan = new URLSearchParams(location.hash.split("?")[1] || "").get("status");
+  const filterStatus = dariTautan ?? bacaLokal("filter-status", "");
   isi.innerHTML = `
-  <div class="baris renggang" style="margin-bottom:1rem"><h1>Pustaka klip</h1>
-    <select id="filter" aria-label="Filter campaign"><option value="">Semua campaign</option>
-      ${CAMPAIGNS.map((c) => `<option value="${esc(c.slug)}" ${c.slug === filter ? "selected" : ""}>${esc(c.nama || c.slug)}</option>`).join("")}</select></div>
-  <p class="redup kecil">Unggah tetap manual (aturan TikTok/IG). Caption TikTok dibuat satu baris supaya tidak rusak saat ditempel.</p>
+  <div class="baris renggang" style="margin-bottom:.5rem"><h1>Pustaka klip</h1>
+    <div class="baris">
+      <select id="filter" aria-label="Filter campaign"><option value="">Semua campaign</option>
+        ${CAMPAIGNS.filter((c) => c.slug).map((c) => `<option value="${esc(c.slug)}" ${c.slug === filter ? "selected" : ""}>${esc(c.nama || c.slug)}</option>`).join("")}</select>
+      <select id="filter-status" aria-label="Filter status"><option value="">Semua status</option>
+        ${Object.entries(LABEL_STATUS).map(([k, v]) => `<option value="${k}" ${k === filterStatus ? "selected" : ""}>${v}</option>`).join("")}</select>
+    </div></div>
+  <p class="redup kecil">Unggah tetap manual (aturan TikTok/IG). Ubah hook tidak perlu render ulang — hook hanya ada di caption. Render ulang memakai waktu & hook yang sama dengan gaya/pengaturan terbaru.</p>
   <div id="grid" class="grid-klip"></div>`;
 
+  let klip = [];
   async function muat() {
-    const f = $("#filter").value;
-    const klip = await api(`/api/clips${f ? `?campaign=${encodeURIComponent(f)}` : ""}`);
-    $("#grid").innerHTML = klip.length ? klip.map((k, i) => {
-      const src = `/media/clip/${encodeURIComponent(k.campaign)}/${encodeURIComponent(k.source_id)}/${encodeURIComponent(k.file)}`;
-      return `<article class="kartu klip" data-i="${i}">
-        <video controls preload="metadata" src="${src}"></video>
-        <h3>${esc(k.hook || k.file)}</h3>
-        <div class="redup kecil">${esc(k.campaign)} · ${esc(k.file)} · ${Number(k.durasi || 0).toFixed(1)} dtk · ${k.ukuran_mb} MB</div>
-        <div class="baris" style="margin-top:.5rem"><a class="tombol" href="${src}?unduh=true">Unduh</a>
-          <button type="button" data-aksi="caption">Caption</button></div>
-        <div class="varian" hidden></div>
-      </article>`;
-    }).join("") : `<p class="kosong">Belum ada klip${f ? " untuk campaign ini" : ""}.</p>`;
-    $("#grid").onclick = async (e) => {
-      const kartu = e.target.closest(".klip");
-      if (!kartu) return;
-      const k = klip[Number(kartu.dataset.i)];
-      const v = kartu.querySelector(".varian");
-      if (e.target.dataset.aksi === "caption") {
-        if (!v.hidden) { v.hidden = true; return; }
-        try {
-          const d = await api(`/api/clips/${encodeURIComponent(k.campaign)}/${encodeURIComponent(k.source_id)}/${encodeURIComponent(k.file)}`);
-          v._varian = d.varian_platform;
-          v.innerHTML = d.varian_platform.map((x, j) => `<div><div class="baris renggang"><strong>${esc(x.platform)}</strong>
-            <button type="button" class="ikon" data-salin="${j}">Salin</button></div>
-            <pre>${esc(x.caption)}</pre><div class="redup kecil">${esc(x.catatan)}</div></div>`).join("") || "<p class='redup'>Tidak ada caption.</p>";
-          v.hidden = false;
-        } catch (err) { gagal(err); }
+    const f = $("#filter").value, st = $("#filter-status").value;
+    klip = (await api(`/api/clips${f ? `?campaign=${encodeURIComponent(f)}` : ""}`)).filter((k) => !st || k.status === st);
+    $("#grid").innerHTML = klip.length ? klip.map((k, i) => kartuKlip(k, i)).join("")
+      : `<p class="kosong">Belum ada klip${f || st ? " untuk filter ini" : ""}.</p>`;
+  }
+
+  function kartuKlip(k, i) {
+    const u = klipUrl(k);
+    return `<article class="kartu klip" data-i="${i}">
+      <button type="button" class="sampul" data-aksi="putar" aria-label="Putar ${esc(k.file)}">
+        <img loading="lazy" src="/media/thumb/${u}?v=${k.dibuat}" alt=""><span class="tombol-putar">▶</span></button>
+      <div class="baris renggang" style="margin-top:.5rem">
+        <select data-aksi="status" class="status-${esc(k.status)}" aria-label="Status">${Object.entries(LABEL_STATUS).map(([s, l]) => `<option value="${s}" ${s === k.status ? "selected" : ""}>${l}</option>`).join("")}</select>
+        <span class="redup kecil">${Number(k.durasi || 0).toFixed(1)} dtk · ${k.ukuran_mb} MB</span></div>
+      <h3 data-hook>${esc(k.hook || k.file)}</h3>
+      <div class="redup kecil">${esc(k.campaign)} · ${esc(k.file)}${k.gaya ? ` · gaya ${esc(k.gaya)}` : ""}</div>
+      ${k.tautan ? `<div class="kecil potong"><a href="${esc(k.tautan)}" target="_blank" rel="noopener noreferrer">${esc(k.tautan)}</a></div>` : ""}
+      <div class="baris aksi-klip">
+        <a class="tombol" href="/media/clip/${u}?unduh=true">Unduh</a>
+        <button type="button" data-aksi="caption">Caption</button>
+        <button type="button" data-aksi="edit">Edit</button>
+        <button type="button" data-aksi="ulang">Render ulang</button>
+        <button type="button" class="ikon bahaya" data-aksi="hapus" title="Hapus klip">Hapus</button>
+      </div>
+      <div class="panel-klip" hidden></div>
+    </article>`;
+  }
+
+  async function buka(kartu, jenis, k) {
+    const p = kartu.querySelector(".panel-klip");
+    if (!p.hidden && p.dataset.jenis === jenis) { p.hidden = true; return; }
+    p.dataset.jenis = jenis;
+    if (jenis === "caption") {
+      const d = await api(`/api/clips/${klipUrl(k)}`);
+      p._varian = d.varian_platform;
+      p.innerHTML = d.varian_platform.map((x, j) => `<div><div class="baris renggang"><strong>${esc(x.platform)}</strong>
+        <button type="button" class="ikon" data-salin="${j}">Salin</button></div>
+        <pre>${esc(x.caption)}</pre><div class="redup kecil">maks ${x.maks_durasi} dtk · ${esc(x.catatan)}</div></div>`).join("") || "<p class='redup'>Tidak ada caption.</p>";
+    } else if (jenis === "edit") {
+      p.innerHTML = `<label>Hook (baris pertama caption)</label><textarea rows="3" maxlength="500" data-f="hook">${esc(k.hook || "")}</textarea>
+        <label style="margin-top:.5rem">Tautan postingan</label><input type="url" data-f="tautan" value="${esc(k.tautan || "")}" placeholder="https://www.tiktok.com/@akun/video/…" style="width:100%">
+        <div class="baris" style="margin-top:.5rem"><button type="button" class="utama" data-aksi="simpan-edit">Simpan</button></div>`;
+    } else if (jenis === "ulang") {
+      p.innerHTML = `<div class="grid-form">
+        <div class="medan"><label>Gaya subtitle</label><select data-f="gaya">${INFO.gaya.map((g) => `<option ${g === (INFO.gaya.includes(k.gaya) ? k.gaya : INFO.gaya_bawaan) ? "selected" : ""}>${esc(g)}</option>`).join("")}</select></div></div>
+        <label class="cek medan"><input type="checkbox" data-f="reframe" ${INFO.reframe_bawaan ? "checked" : ""}> Reframe ikut wajah</label>
+        <p class="redup kecil">Menimpa ${esc(k.file)}; status & tautan dipertahankan. Kualitas/encode mengikuti Pengaturan saat ini.</p>
+        <button type="button" class="utama" data-aksi="mulai-ulang">Render ulang</button>`;
+    }
+    p.hidden = false;
+  }
+
+  $("#grid").onclick = async (e) => {
+    const kartu = e.target.closest(".klip");
+    if (!kartu) return;
+    const k = klip[Number(kartu.dataset.i)];
+    const aksi = e.target.closest("[data-aksi]")?.dataset.aksi;
+    const p = kartu.querySelector(".panel-klip");
+    try {
+      if (aksi === "putar") {
+        const v = document.createElement("video");
+        v.src = `/media/clip/${klipUrl(k)}`; v.controls = true; v.autoplay = true; v.playsInline = true;
+        kartu.querySelector(".sampul").replaceWith(v);
+      } else if (["caption", "edit", "ulang"].includes(aksi)) {
+        await buka(kartu, aksi, k);
+      } else if (aksi === "simpan-edit") {
+        const d = await api(`/api/clips/${klipUrl(k)}`, { method: "PATCH", json: {
+          hook: p.querySelector("[data-f=hook]").value, tautan: p.querySelector("[data-f=tautan]").value } });
+        Object.assign(k, { hook: d.hook, tautan: d.tautan || "" });
+        kartu.outerHTML = kartuKlip(k, Number(kartu.dataset.i));
+        toast("Hook & caption diperbarui");
+      } else if (aksi === "mulai-ulang") {
+        await api(`/api/clips/${klipUrl(k)}/render-ulang`, { method: "POST", json: {
+          gaya: p.querySelector("[data-f=gaya]").value, reframe: p.querySelector("[data-f=reframe]").checked } });
+        p.hidden = true;
+        toast(`Render ulang ${k.file} dimulai — pantau di panel Job`);
+        segarkanJob();
+      } else if (aksi === "hapus") {
+        if (!confirm(`Hapus ${k.file} beserta subtitle & caption-nya? Tidak bisa dibatalkan.`)) return;
+        await api(`/api/clips/${klipUrl(k)}`, { method: "DELETE" });
+        toast(`${k.file} dihapus`);
+        muat();
       }
       if (e.target.dataset.salin !== undefined) {
-        const teks = v._varian[Number(e.target.dataset.salin)].caption;
-        try { await navigator.clipboard.writeText(teks); toast("Caption disalin"); }
+        try { await navigator.clipboard.writeText(p._varian[Number(e.target.dataset.salin)].caption); toast("Caption disalin"); }
         catch (_) { toast("Gagal menyalin — pilih teksnya manual", true); }
       }
-    };
-  }
+    } catch (err) { gagal(err); }
+  };
+  $("#grid").onchange = async (e) => {
+    if (e.target.dataset.aksi !== "status") return;
+    const kartu = e.target.closest(".klip");
+    const k = klip[Number(kartu.dataset.i)];
+    try {
+      await api(`/api/clips/${klipUrl(k)}`, { method: "PATCH", json: { status: e.target.value } });
+      k.status = e.target.value;
+      e.target.className = `status-${k.status}`;
+      toast(`Status: ${LABEL_STATUS[k.status]}`);
+    } catch (err) { gagal(err); e.target.value = k.status; }
+  };
   $("#filter").onchange = () => { simpanLokal("filter-klip", $("#filter").value); muat().catch(gagal); };
+  $("#filter-status").onchange = () => { simpanLokal("filter-status", $("#filter-status").value); muat().catch(gagal); };
   SELESAI_JOB.push((j) => { if (j.jenis !== "fetch_source") muat().catch(() => {}); });
   await muat();
 }
@@ -776,12 +868,37 @@ async function halamanPengaturan() {
   };
 }
 
+// ----------------------------------------------------------- tema & versi
+const TEMA = ["otomatis", "terang", "gelap"];
+function terapkanTema(t) {
+  const el = document.documentElement;
+  if (t === "terang") el.dataset.theme = "light";
+  else if (t === "gelap") el.dataset.theme = "dark";
+  else delete el.dataset.theme;
+  $("#tombol-tema").textContent = { otomatis: "◐ Otomatis", terang: "☀ Terang", gelap: "☾ Gelap" }[t];
+}
+let temaKini = bacaLokal("tema", "otomatis");
+if (!TEMA.includes(temaKini)) temaKini = "otomatis";
+terapkanTema(temaKini);
+$("#tombol-tema").onclick = () => {
+  temaKini = TEMA[(TEMA.indexOf(temaKini) + 1) % TEMA.length];
+  simpanLokal("tema", temaKini);
+  terapkanTema(temaKini);
+};
+function tulisVersi() {
+  const v = INFO.versi || {};
+  $("#versi").innerHTML = v.commit
+    ? `Clipper Studio · versi <code>${esc(v.commit)}</code> · ${esc(new Date(v.waktu).toLocaleString("id-ID"))} · ${esc(v.judul)}`
+    : "Clipper Studio";
+}
+
 // ---------------------------------------------------------------- mulai
 (async () => {
   try {
     [INFO, CAMPAIGNS] = await Promise.all([api("/api/info"), api("/api/campaigns")]);
     CAMPAIGNS = CAMPAIGNS.filter((c) => c.slug || c.error);
   } catch (e) { gagal(e); }
+  tulisVersi();
   pantauJob();
   jalankanRute();
 })();

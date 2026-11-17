@@ -61,6 +61,30 @@ class RenderReq(BaseModel):
     maks_durasi: float | None = Field(None, gt=0, le=600)
 
 
+class UbahKlip(BaseModel):
+    hook: str | None = Field(None, max_length=500)
+    status: str | None = None
+    tautan: str | None = Field(None, max_length=500)
+
+
+class RenderUlang(BaseModel):
+    gaya: str | None = None
+    reframe: bool | None = None
+    hook_title: str | None = Field(None, max_length=500)
+
+
+def _versi() -> dict:
+    """Commit yang sedang dijalankan: memastikan devodo memakai kode terbaru."""
+    root = Path(__file__).resolve().parent.parent
+    try:
+        out = subprocess.run(["git", "-C", str(root), "log", "-1", "--format=%h|%cI|%s"],
+                             capture_output=True, text=True, timeout=5).stdout.strip()
+        h, waktu, judul = out.split("|", 2)
+        return {"commit": h, "waktu": waktu, "judul": judul}
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return {"commit": None}
+
+
 class AutoReq(BaseModel):
     source_id: str
     campaign: str
@@ -93,6 +117,7 @@ def create_app(svc: ClipperService | None = None, jobs: JobManager | None = None
         return svc or ClipperService.from_env()
 
     app.state.jobs = JOBS
+    VERSI = _versi()   # dibaca sekali saat start: yang dilaporkan = kode yang benar-benar jalan
     app.state.svc = layanan
 
     @app.middleware("http")
@@ -122,7 +147,14 @@ def create_app(svc: ClipperService | None = None, jobs: JobManager | None = None
         s = layanan().settings
         return {"gaya": sorted(layanan().gaya_subtitle(s)), "gaya_bawaan": s.subtitle_style,
                 "reframe_bawaan": s.reframe, "ai_bawaan": s.ai_provider,
-                "maks_durasi_bawaan": s.maks_durasi, "gemini_siap": bool(s.gemini_api_key)}
+                "maks_durasi_bawaan": s.maks_durasi, "gemini_siap": bool(s.gemini_api_key),
+                "versi": VERSI}
+
+    @app.get("/api/ringkasan")
+    def ringkasan() -> dict:
+        r = layanan().ringkasan()
+        r["job_berjalan"] = sum(1 for j in JOBS.daftar() if not j.beres.is_set())
+        return r
 
     # ------------------------------------------------------------- pengaturan
     @app.get("/api/settings")
@@ -258,6 +290,26 @@ def create_app(svc: ClipperService | None = None, jobs: JobManager | None = None
     @app.get("/api/clips/{slug}/{source_id}/{file}")
     def detail_klip(slug: str, source_id: str, file: str) -> dict:
         return layanan().get_clip(slug, source_id, file)
+
+    @app.patch("/api/clips/{slug}/{source_id}/{file}")
+    def ubah_klip(slug: str, source_id: str, file: str, req: UbahKlip) -> dict:
+        return layanan().update_clip(slug, source_id, file, hook=req.hook, status=req.status,
+                                     tautan=req.tautan)
+
+    @app.delete("/api/clips/{slug}/{source_id}/{file}")
+    def hapus_klip(slug: str, source_id: str, file: str) -> dict:
+        return layanan().delete_clip(slug, source_id, file)
+
+    @app.post("/api/clips/{slug}/{source_id}/{file}/render-ulang")
+    def render_ulang(slug: str, source_id: str, file: str, req: RenderUlang) -> dict:
+        layanan().get_clip(slug, source_id, file)          # galat cepat sebelum antre
+        return _mulai("render_ulang", layanan().rerender_clip, slug=slug, source_id=source_id,
+                      file=file, gaya=req.gaya, reframe=req.reframe, hook_title=req.hook_title)
+
+    @app.get("/media/thumb/{slug}/{source_id}/{file}")
+    def thumbnail(slug: str, source_id: str, file: str):
+        return FileResponse(layanan().thumbnail(slug, source_id, file), media_type="image/jpeg",
+                            headers={"Cache-Control": "no-cache"})
 
     @app.get("/media/clip/{slug}/{source_id}/{file}")
     def video_klip(slug: str, source_id: str, file: str, unduh: bool = False):

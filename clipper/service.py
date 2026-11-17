@@ -15,7 +15,9 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
+import time
 import threading
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, fields, replace
@@ -100,6 +102,7 @@ class ClipperService:
         self.face_detector = face_detector  # None = mediapipe (reframe._mediapipe_detector)
         # fetch & render makan CPU penuh dan menomori file: satu per satu
         self._kunci = threading.Lock()
+        self._kunci_manifest = threading.RLock()   # edit cepat (hook/status) vs. manifest
 
     @property
     def settings(self) -> Settings:
@@ -463,8 +466,9 @@ class ClipperService:
 
     def _render(self, source_id: str, slug: str, chooser, jumlah: int, *, gaya: str | None,
                 reframe: bool | None, maks_durasi: float | None, catatan: list[dict],
-                on_progress: Progress | None) -> list[dict]:
-        """catatan[i] = info tambahan untuk window ke-i yang dikembalikan chooser."""
+                on_progress: Progress | None, nomor: int | None = None) -> list[dict]:
+        """catatan[i] = info tambahan untuk window ke-i yang dikembalikan chooser.
+        nomor = timpa klip bernomor itu (render ulang), bukan menambah nomor baru."""
         c = self.load_campaign(slug)
         meta = self._meta(source_id)
         video = Path(meta["video"])
@@ -483,31 +487,40 @@ class ClipperService:
         with self._giliran(on_progress or (lambda t, i: None)):
             klip_dir = self._clip_dir(slug, source_id)
             klip_dir.mkdir(parents=True, exist_ok=True)
-            lewati = self._nomor_berikut(klip_dir)
+            lewati = (nomor - 1) if nomor else self._nomor_berikut(klip_dir)
             hasil = pipeline.process(
                 c, video, segmen, klip_dir, jumlah=jumlah, lewati=lewati,
                 maks_durasi=maks_durasi, chooser=chooser, run=self._run,
                 on_progress=on_progress, style=semua[gaya], settings=s,
                 reframe_planner=pipeline.make_reframe_planner(
                     s, detector=self._detektor_wajah(source_id)))
-            manifest = self._manifest(slug, source_id)
-            baru = []
-            for r in hasil:
-                urutan = r.rank - lewati - 1  # nomor dihitung di dalam kunci: aman dari balapan
-                ekstra = catatan[urutan] if 0 <= urutan < len(catatan) else {}
-                caption_p = klip_dir / r.file.replace(".mp4", ".txt")
-                caption = caption_p.read_text(encoding="utf-8") if caption_p.is_file() else None
-                item = {**asdict(r), "source_id": source_id, "campaign": slug, "gaya": gaya,
-                        **ekstra}
-                if caption:
-                    # ClipResult.hook dipotong 80 karakter; simpan hook utuh dari caption
-                    # supaya varian per platform sama persis dengan file .txt
-                    item["hook"] = caption.rsplit("\n\n", 1)[0]
-                manifest = [m for m in manifest if m.get("file") != r.file] + [item]
-                baru.append({**item, "path": str(klip_dir / r.file), "caption": caption})
-            (klip_dir.parent / "clips.json").write_text(
-                json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
-            return baru
+            with self._kunci_manifest:   # jangan bertabrakan dengan edit hook/status
+                manifest = self._manifest(slug, source_id)
+                baru = []
+                for r in hasil:
+                    urutan = r.rank - lewati - 1  # nomor dihitung di dalam kunci: aman dari balapan
+                    ekstra = catatan[urutan] if 0 <= urutan < len(catatan) else {}
+                    caption_p = klip_dir / r.file.replace(".mp4", ".txt")
+                    caption = caption_p.read_text(encoding="utf-8") if caption_p.is_file() else None
+                    lama = next((m for m in manifest if m.get("file") == r.file), {})
+                    item = {**asdict(r), "source_id": source_id, "campaign": slug, "gaya": gaya,
+                            "dibuat": round(time.time()),
+                            **{k: lama[k] for k in ("status", "tautan", "alasan", "diminta") if k in lama},
+                            **ekstra}
+                    if caption:
+                        # ClipResult.hook dipotong 80 karakter; simpan hook utuh dari caption
+                        # supaya varian per platform sama persis dengan file .txt
+                        item["hook"] = caption.rsplit("\n\n", 1)[0]
+                    manifest = [m for m in manifest if m.get("file") != r.file] + [item]
+                    baru.append({**item, "path": str(klip_dir / r.file), "caption": caption})
+                self._simpan_manifest(slug, source_id, manifest)
+                return baru
+
+    def _simpan_manifest(self, slug: str, source_id: str, manifest: list[dict]) -> None:
+        p = self._clip_dir(slug, source_id).parent / "clips.json"
+        tmp = p.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, p)
 
     def render_clips(self, source_id: str, slug: str, pilihan: Iterable[Selection | dict], *,
                      gaya: str | None = None, reframe: bool | None = None,
@@ -594,11 +607,123 @@ class ClipperService:
             for m in json.loads(mp.read_text(encoding="utf-8")):
                 f = mp.parent / "clips" / m["file"]
                 if f.is_file():
+                    st = f.stat()
                     hasil.append({"campaign": m.get("campaign"), "source_id": m.get("source_id"),
                                   "file": m["file"], "path": str(f), "mulai": m.get("mulai"),
                                   "durasi": m.get("durasi"), "hook": m.get("hook"),
-                                  "ukuran_mb": round(f.stat().st_size / 1e6, 1)})
+                                  "gaya": m.get("gaya"), "status": m.get("status", "baru"),
+                                  "tautan": m.get("tautan", ""), "dibuat": int(st.st_mtime),
+                                  "ukuran_mb": round(st.st_size / 1e6, 1)})
         return hasil
+
+    # ------------------------------------------------------------ kelola klip
+    STATUS = ("baru", "diunggah", "disubmit")
+
+    def _entri(self, slug: str, source_id: str, file: str) -> tuple[Path, list[dict], dict]:
+        if not _KLIP.match(file or "") or not file.startswith(f"{_cek_slug(slug)}-"):
+            raise ClipperError(f"nama file klip tidak sah: {file!r}")
+        f = self._clip_dir(slug, source_id) / file
+        if not f.is_file():
+            raise ClipperError(f"klip tidak ada: {file}")
+        manifest = self._manifest(slug, source_id)
+        m = next((x for x in manifest if x.get("file") == file), None)
+        if m is None:
+            m = {"file": file, "campaign": slug, "source_id": source_id}
+            manifest.append(m)
+        return f, manifest, m
+
+    def update_clip(self, slug: str, source_id: str, file: str, *, hook: str | None = None,
+                    status: str | None = None, tautan: str | None = None) -> dict:
+        """Ubah hook (caption ditulis ulang, video tidak perlu dirender: hook hanya ada di
+        caption), status unggah, atau tautan postingan."""
+        with self._kunci_manifest:   # baca-ubah-tulis manifest secara utuh
+            f, manifest, m = self._entri(slug, source_id, file)
+            if hook is not None:
+                hook = hook.strip()
+                if not hook or len(hook) > 500:
+                    raise ClipperError("hook harus 1-500 karakter")
+                c = self.load_campaign(slug)
+                f.with_suffix(".txt").write_text(camp.caption(c, hook), encoding="utf-8")
+                m["hook"] = hook
+            if status is not None:
+                if status not in self.STATUS:
+                    raise ClipperError(f"status harus salah satu dari {list(self.STATUS)}")
+                m["status"] = status
+            if tautan is not None:
+                tautan = tautan.strip()
+                if tautan and (len(tautan) > 500 or not re.match(r"^https?://\S+$", tautan)):
+                    raise ClipperError("tautan harus URL http(s)")
+                m["tautan"] = tautan
+            self._simpan_manifest(slug, source_id, manifest)
+            return self.get_clip(slug, source_id, file)
+
+    def delete_clip(self, slug: str, source_id: str, file: str) -> dict:
+        with self._kunci_manifest:   # baca-ubah-tulis manifest secara utuh
+            f, manifest, _m = self._entri(slug, source_id, file)
+            for ext in (".mp4", ".srt", ".txt", ".jpg"):
+                f.with_suffix(ext).unlink(missing_ok=True)
+            self._simpan_manifest(slug, source_id, [x for x in manifest if x.get("file") != file])
+            return {"dihapus": file}
+
+    def rerender_clip(self, slug: str, source_id: str, file: str, *, gaya: str | None = None,
+                      reframe: bool | None = None, hook_title: str | None = None,
+                      on_progress: Progress | None = None) -> dict:
+        """Render ulang satu klip ke nomor file yang sama: waktu & hook sama, gaya /
+        reframe / setelan encode terbaru. Status & tautan dipertahankan."""
+        f, _manifest, m = self._entri(slug, source_id, file)
+        if m.get("mulai") is None or not m.get("durasi"):
+            raise ClipperError("klip ini tidak punya data waktu di manifest; tidak bisa dirender ulang")
+        cap = f.with_suffix(".txt")
+        hook = (hook_title or "").strip() or (cap.read_text(encoding="utf-8").rsplit("\n\n", 1)[0]
+                                              if cap.is_file() else m.get("hook", ""))
+        semua = self.gaya_subtitle()
+        if gaya is None and m.get("gaya") in semua:
+            gaya = m["gaya"]
+        c = self.load_campaign(slug)
+        segmen = self.segments(source_id)
+        mulai, durasi = float(m["mulai"]), float(m["durasi"])
+        # waktu manifest dibulatkan 0,1 dtk: akhir sedikit di depan supaya penempelan
+        # memilih akhir kalimat yang sama dengan render sebelumnya
+        lo, hi = c.durasi_min_s, max(c.durasi_maks_s, durasi + 1)
+        w = select.snap_to_windows([Proposal(mulai, mulai + durasi - 0.2, hook, "", score=None)],
+                                   segmen, min(lo, durasi), hi, maks_pangkas=self.settings.maks_pangkas)
+        if not w:
+            raise ClipperError("waktu klip tidak bisa ditempel ulang ke transkrip")
+        nomor = int(_KLIP.match(file)["n"])
+        klip = self._render(source_id, slug, lambda *a: w, 1, gaya=gaya, reframe=reframe,
+                            maks_durasi=hi, catatan=[], on_progress=on_progress, nomor=nomor)
+        return {"klip": klip}
+
+    def thumbnail(self, slug: str, source_id: str, file: str) -> Path:
+        """Gambar kecil klip (dibuat sekali, diperbarui bila klip dirender ulang)."""
+        f, _m, _e = self._entri(slug, source_id, file)
+        jpg = f.with_suffix(".jpg")
+        if not jpg.is_file() or jpg.stat().st_mtime < f.stat().st_mtime:
+            tmp = f.with_name(f".{f.stem}.tmp.jpg")
+            hasil = subprocess.run(
+                ["ffmpeg", "-v", "error", "-y", "-ss", "1", "-i", str(f), "-frames:v", "1",
+                 "-vf", "scale=360:-2", "-q:v", "4", str(tmp)], capture_output=True, timeout=60)
+            if hasil.returncode != 0 or not tmp.is_file():
+                tmp.unlink(missing_ok=True)
+                raise ClipperError("thumbnail gagal dibuat")
+            os.replace(tmp, jpg)
+        return jpg
+
+    def ringkasan(self) -> dict:
+        klip = self.list_clips()
+        per_status = {s: 0 for s in self.STATUS}
+        per_campaign: dict[str, int] = {}
+        for k in klip:
+            per_status[k["status"] if k["status"] in per_status else "baru"] += 1
+            per_campaign[k["campaign"]] = per_campaign.get(k["campaign"], 0) + 1
+        try:
+            du = shutil.disk_usage(self.work_dir if self.work_dir.exists() else self.work_dir.parent)
+            disk = {"kosong_gb": round(du.free / 1e9, 1), "total_gb": round(du.total / 1e9, 1)}
+        except OSError:
+            disk = None
+        return {"sumber": len(self.list_sources()), "klip": len(klip),
+                "klip_mb": round(sum(k["ukuran_mb"] for k in klip), 1),
+                "per_status": per_status, "per_campaign": per_campaign, "disk": disk}
 
     def get_clip(self, slug: str, source_id: str, file: str) -> dict:
         if not _KLIP.match(file or ""):
