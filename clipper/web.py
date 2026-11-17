@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -322,7 +322,13 @@ def create_app(svc: ClipperService | None = None, jobs: JobManager | None = None
 
     @app.get("/")
     def beranda():
-        return FileResponse(STATIC / "index.html", media_type="text/html")
+        # ?v=<commit> di URL aset: setelah update, browser langsung memuat JS/CSS baru
+        # (tanpa ini halaman bisa memakai app.js lama dari cache sampai di-reload paksa)
+        v = VERSI.get("commit") or str(int((STATIC / "app.js").stat().st_mtime))
+        html = (STATIC / "index.html").read_text(encoding="utf-8")
+        for aset in ("/static/app.css", "/static/app.js"):
+            html = html.replace(f'"{aset}"', f'"{aset}?v={v}"')
+        return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
     return app
 

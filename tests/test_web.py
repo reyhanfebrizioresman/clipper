@@ -129,3 +129,9 @@ def test_campaign_create_update_validation(web):
 
 def test_cancel_unknown_job_404(web):
     assert web.post("/api/jobs/tidakada/cancel", headers=H).status_code == 404
+
+
+def test_index_busts_asset_cache(web):
+    r = web.get("/")
+    assert "/static/app.js?v=" in r.text and "/static/app.css?v=" in r.text
+    assert r.headers["cache-control"] == "no-cache"
