@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "clipper-devodo": {
+      "type": "stdio",
+      "command": "ssh",
+      "args": [
+        "-F", "/home/reyhan/.ssh/config", "-T",
+        "-o", "BatchMode=yes", "-o", "ServerAliveInterval=30",
+        "reyhan",
+        "ssh", "-F", "/home/reyhan/.ssh/config", "-T",
+        "-o", "BatchMode=yes", "-o", "ServerAliveInterval=30",
+        "devodo",
+        "/root/clipper-v2/.venv/bin/python",
+        "/root/clipper-v2/scripts/mcp_server.py"
+      ]
+    },
+    "clipper": {
+      "type": "stdio",
+      "command": "ssh",
+      "args": [
+        "-F", "/home/reyhan/.ssh/config", "-T",
+        "-o", "BatchMode=yes", "-o", "ServerAliveInterval=30",
+        "reyhan",
+        "/home/reyhan/clipper-v2/.venv/bin/python",
+        "/home/reyhan/clipper-v2/scripts/mcp_server.py"
+      ]
+    }
+  }
+}

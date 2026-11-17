@@ -1,0 +1,31 @@
+# Gabungkan tabel ini ke ~/.codex/config.toml; pertahankan konfigurasi lain.
+# Path SSH pertama adalah milik mesin yang menjalankan Codex.
+# Sesuaikan /home/reyhan/.ssh/config bila home pengguna berbeda.
+
+[mcp_servers.clipper-devodo]
+command = "ssh"
+args = [
+  "-F", "/home/reyhan/.ssh/config", "-T",
+  "-o", "BatchMode=yes", "-o", "ServerAliveInterval=30",
+  "reyhan",
+  "ssh", "-F", "/home/reyhan/.ssh/config", "-T",
+  "-o", "BatchMode=yes", "-o", "ServerAliveInterval=30",
+  "devodo",
+  "/root/clipper-v2/.venv/bin/python",
+  "/root/clipper-v2/scripts/mcp_server.py"
+]
+startup_timeout_sec = 30
+tool_timeout_sec = 60
+
+# Opsional: mesin reyhan memiliki penyimpanan yang terpisah dari devodo.
+[mcp_servers.clipper]
+command = "ssh"
+args = [
+  "-F", "/home/reyhan/.ssh/config", "-T",
+  "-o", "BatchMode=yes", "-o", "ServerAliveInterval=30",
+  "reyhan",
+  "/home/reyhan/clipper-v2/.venv/bin/python",
+  "/home/reyhan/clipper-v2/scripts/mcp_server.py"
+]
+startup_timeout_sec = 30
+tool_timeout_sec = 60

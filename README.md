@@ -37,10 +37,14 @@ membawa `X-Clipper: 1`, supaya situs lain tidak bisa memicu aksi lewat browsermu
 Buka dari laptop lewat SSH tunnel, mis. lewat host perantara:
 
 ```
-ssh -L 8780:127.0.0.1:8780 reyhan "ssh -N -L 8780:127.0.0.1:8780 devodo"
+ssh -F ~/.ssh/config -L 8780:127.0.0.1:8780 reyhan "ssh -F /home/reyhan/.ssh/config -N -L 8780:127.0.0.1:8780 devodo"
 ```
 
 ## Server MCP (pintu 2)
+
+**Panduan setup lengkap:** [Codex, Claude, SSH reyhan/devodo, dan tes koneksi](docs/mcp-setup.md).
+Pilih `clipper-devodo` untuk memakai sumber dan pustaka yang sama dengan web UI
+di devodo. Contoh di bawah menjalankan engine pada server `reyhan`.
 
 Klien AI kamu sendiri (Claude Code / Claude Desktop / Codex) yang memilih momen dan menulis
 hook; engine yang memotong, memberi subtitle, dan menulis caption. Server tidak memanggil LLM.
@@ -54,7 +58,7 @@ Dari mesin lain lewat SSH (konfigurasi Claude Code, `~/.claude.json` → `mcpSer
 
 ```json
 "clipper": {"type": "stdio", "command": "ssh",
-  "args": ["-T", "-o", "BatchMode=yes", "reyhan",
+  "args": ["-F", "/home/reyhan/.ssh/config", "-T", "-o", "BatchMode=yes", "reyhan",
            "/home/reyhan/clipper-v2/.venv/bin/python",
            "/home/reyhan/clipper-v2/scripts/mcp_server.py"]}
 ```
